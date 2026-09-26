@@ -1,0 +1,5 @@
+[
+  {"service": "api", "level": "INFO", "ts": "2026-06-11T09:14:02"},
+  {"service": "api", "level": "ERROR", "ts": "2026-06-11T09:14:07"},
+  {"service": "worker", "level": "WARN"},
+  {"service": "billing", "level":

@@ -1,0 +1,68 @@
+# Stock sentences this tranche DELETES. A correctly patched binary contains ZERO
+# of them. `ccctl.py status` counts them; `apply` refuses to swap if any is live.
+#
+# MARKERS.txt proves our text went in. This file proves stock text came out.
+# Nothing checked the second half until 2026-08-25, and that is the half that
+# catches a silent revert, or an upstream release that moves deleted text into a
+# site we no longer patch.
+#
+# RULE FOR ADDING ONE. Measure both binaries first:
+#
+#   blob = live_blob(<ver>.stock)  -> count must be >= 1   (the text is stock)
+#   blob = live_blob(<live>)       -> count must be 0      (our apply removed it)
+#
+# THE FIRST HALF OF THAT RULE IS NOW ENFORCED, and it had to be. An entry that
+# upstream deletes itself scores as a passing deletion forever — absent is
+# absent, and a count cannot tell "we removed it" from "there was nothing to
+# remove". `To leave something undone because it is hard` sat here doing that
+# for at least three releases (0 in stock 2.1.251, 2.1.257 and 2.1.259), while
+# `status` reported 3/3 deletions holding on a 2-of-3 check. Found 2026-09-03
+# by the stock arm's inverted check, which expected it to be PRESENT in a stock
+# build and said so when it was not. `antimarkers_live()` now re-asks the
+# question against the parked pristine on every status and apply, and reports a
+# DEAD anti-marker instead of counting it as a pass.
+#
+# A candidate that reads non-zero on a correctly patched binary is NOT an
+# anti-marker, however much it looks like one. Two that fail, measured on
+# 2.1.241/linux: stock's "Being readable and being concise…" sentence
+# (stock 3, patched 2) and its "they don't know the codenames…" clause
+# (stock 3, patched 2) — the bundled model-migration skill doc quotes
+# that paragraph as an example, so the surplus copies are not ours to remove.
+#
+# KEEP EACH ENTRY AS SHORT AS THE MEASUREMENT ALLOWS. An anti-marker is a
+# locator, and a locator is the text it locates: every word here is Anthropic's,
+# published in the public mirror, and earns its place only by making the count
+# come out right. Shorten a candidate until one more word off changes a count,
+# then put the last working form back. Trimming is not free — "Before your first
+# tool call" alone reads 3/1, because the shorter a span is the more of the
+# bundle it can hit.
+#
+# Counts below are stock/patched on 2.1.241 linux, 2026-08-25, re-measured
+# 2026-09-21 on stock 2.1.273 (linux-x64 and win32-x64), stock 2.1.278 and the
+# live patched 2.1.278 — 1/0 for all four entries in every pairing.
+
+# --- system-prompt-communication-style: the narrate-as-you-go block (1/0)
+Assume users can't see most
+
+# --- same fragment: the pre-announce rule (1/0)
+Before your first tool call, state
+
+# --- system-prompt-delivering-work-at-full-scope: replaces the retired
+# `To leave something undone because it is hard`, which upstream had already
+# deleted (see the header). Two entries, not one, because a single upstream
+# rewrite would otherwise blind this fragment's check again — one names the
+# scope clause the v4.2 ladder replaced, the other the blocking-question
+# license. Measured 2026-09-03 on win32: stock 2.1.257 = 1, stock 2.1.259 = 1,
+# patched 2.1.257 = 0 for both.
+The requested scope is the deliverable
+Reserve blocking questions
+
+# --- bash-audience-note-result-not-output: the audience note's stock last
+# sentence. Measured 2026-09-25 on win32, whole file (win32 has no bundle
+# window): stock 2.1.280 = 1. It has no string-table copy, unlike the
+# action_caution clause, which occurs twice in stock 2.1.280 (builder and
+# string table) and is therefore not an anti-marker: the table copy stays.
+# Trimmed 2026-09-25 to its last five words so the file does not carry the
+# sentence: whole file, linux-x64 stock 2.1.280 = 1, the live patched 2.1.280
+# = 0, the same as the full sentence on both. Not re-measured on win32.
+put it in your reply

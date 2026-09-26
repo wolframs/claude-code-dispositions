@@ -1,0 +1,778 @@
+diff --git a/src/patches/agentsMd.test.ts b/src/patches/agentsMd.test.ts
+index 458f7c5..f493982 100644
+--- a/src/patches/agentsMd.test.ts
++++ b/src/patches/agentsMd.test.ts
+@@ -128,6 +128,23 @@ describe('agentsMd', () => {
+       expect(() => new Function(`return (${result})`)).not.toThrow();
+     });
+ 
++    const asyncReader257 =
++      'async function Uwt(e,n,r,o){try{let d,p=!1;if(o){let y=await PZo(o);' +
++      'switch(y.kind){case"absent":return{info:null,includePaths:[]};case"content":d=y.content;break}}' +
++      'else{let y=ce();d=await pH(y,e,aWe,(k)=>{p=k.isDirectory()})}' +
++      'if(d===null){t(`[CLAUDE.md] skipping ${e}`);return{info:null,includePaths:[]}}' +
++      'return mrr(d,e,n,r)}catch(d){return RZo(d,e),{info:null,includePaths:[]}}}';
++
++    it('handles the CC 2.1.257 four-parameter storage-aware reader', () => {
++      const result = writeAgentsMd(asyncReader257, altNames)!;
++
++      expect(result).not.toBeNull();
++      expect(result).toContain('async function Uwt(e,n,r,o,didReroute)');
++      expect(result).toContain('await Uwt(altPath,n,r,void 0,true)');
++      expect(result).toContain('return mrr(d,e,n,r)');
++      expect(() => new Function(`return (${result})`)).not.toThrow();
++    });
++
+     // Behavioral tests: actually EXECUTE the patched 2.1.214 reader against a stubbed
+     // fs, mirroring the real reader/helper shape. `Yq` models the real helper exactly
+     // (`await fs.stat(p)` — which throws ENOENT for a missing file, so the reroute in
+diff --git a/src/patches/agentsMd.ts b/src/patches/agentsMd.ts
+index bd8db9b..610aa12 100644
+--- a/src/patches/agentsMd.ts
++++ b/src/patches/agentsMd.ts
+@@ -16,6 +16,9 @@ export const writeAgentsMd = (
+   file: string,
+   altNames: string[]
+ ): string | null => {
++  const async2257 = writeAgentsMdAsync2257(file, altNames);
++  if (async2257) return async2257;
++
+   const async2214 = writeAgentsMdAsync2214(file, altNames);
+   if (async2214) return async2214;
+ 
+@@ -28,6 +31,41 @@ export const writeAgentsMd = (
+   return writeAgentsMdSync(file, altNames);
+ };
+ 
++/**
++ * CC 2.1.257 adds a fourth, storage-backed input parameter to the reader. Keep
++ * that parameter intact and use the filesystem path for alternative names;
++ * reusing the storage object would read the original CLAUDE.md payload again.
++ */
++const writeAgentsMdAsync2257 = (
++  file: string,
++  altNames: string[]
++): string | null => {
++  const pattern =
++    /async function ([$\w]+)\(([$\w]+),([$\w]+),([$\w]+),([$\w]+)\)\{try\{let ([$\w]+),[$\w]+=!1;if\(\5\)\{[\s\S]{0,900}?\}else\{[\s\S]{0,400}?\6=await [$\w]+\([\s\S]{0,200}?\)\}if\(\6===null\)\{[\s\S]{0,900}?return\{info:null,includePaths:\[\]\}\}return [$\w]+\(\6,\2,\3,\4\)\}catch\(([$\w]+)\)\{return ([$\w]+)\(\7,\2\),\{info:null,includePaths:\[\]\}\}\}/;
++
++  const m = file.match(pattern);
++  if (!m || m.index === undefined) return null;
++
++  const [full, funcName, pathParam, p2, p3, storageParam, , catchVar, handler] =
++    m;
++  const guardParam = 'didReroute';
++  const oldSig = `async function ${funcName}(${pathParam},${p2},${p3},${storageParam})`;
++  const newSig = `${oldSig.slice(0, -1)},${guardParam})`;
++  const oldCatch = `catch(${catchVar}){return ${handler}(${catchVar},${pathParam}),{info:null,includePaths:[]}}`;
++  const alternatives = JSON.stringify(altNames);
++  const reroute =
++    `if(!${guardParam}&&(${pathParam}.endsWith("/CLAUDE.md")||${pathParam}.endsWith("\\\\CLAUDE.md"))){` +
++    `for(let alt of ${alternatives}){let altPath=${pathParam}.slice(0,-9)+alt;` +
++    `try{let _r=await ${funcName}(altPath,${p2},${p3},void 0,true);if(_r.info)return _r}catch{}}}`;
++  const newCatch = `catch(${catchVar}){${reroute}return ${handler}(${catchVar},${pathParam}),{info:null,includePaths:[]}}`;
++  const replacement = full.replace(oldSig, newSig).replace(oldCatch, newCatch);
++  const endIndex = m.index + full.length;
++  const newFile = file.slice(0, m.index) + replacement + file.slice(endIndex);
++
++  showDiff(file, newFile, replacement, m.index, endIndex);
++  return newFile;
++};
++
+ /**
+  * Shared reroute injection for the async readers (CC 2.1.199 and 2.1.212+). Both
+  * matchers capture the same group layout — [1]=funcName, [2]=pathParam, [3],[4]=the
+diff --git a/src/patches/clearScreen.test.ts b/src/patches/clearScreen.test.ts
+index 4569c13..d8a8cd4 100644
+--- a/src/patches/clearScreen.test.ts
++++ b/src/patches/clearScreen.test.ts
+@@ -89,6 +89,20 @@ describe('clearScreen', () => {
+       expect(result).toContain('globalThis.__tweakccForceRedraw');
+     }
+   });
++
++  it('handles the CC 2.1.257 renderer-map getter', () => {
++    const input =
++      slashCommandArray +
++      ';' +
++      renderFilter +
++      ';function i$t(){di().get(process.stdout)?.forceRedraw()}';
++    const result = writeClearScreen(input)!;
++
++    expect(result).not.toBeNull();
++    expect(result).toContain(
++      'globalThis.__tweakccForceRedraw=()=>di().get(process.stdout)?.forceRedraw()'
++    );
++  });
+ });
+ 
+ describe('patchRenderFilter', () => {
+diff --git a/src/patches/clearScreen.ts b/src/patches/clearScreen.ts
+index 2a2353e..24e0c78 100644
+--- a/src/patches/clearScreen.ts
++++ b/src/patches/clearScreen.ts
+@@ -11,7 +11,7 @@ export const writeClearScreen = (oldFile: string): string | null => {
+   }
+ 
+   const redrawPattern =
+-    /([,;{}])(function [$\w]+\(\)\{)([$\w]+)\.get\(process\.stdout\)\?\.forceRedraw\(\)\}/;
++    /([,;{}])(function [$\w]+\(\)\{)([$\w]+(?:\(\))?)\.get\(process\.stdout\)\?\.forceRedraw\(\)\}/;
+   const redrawMatch = oldFile.match(redrawPattern);
+   if (!redrawMatch || redrawMatch.index === undefined) {
+     debug('patch: clearScreen: failed to find forceRedraw function');
+diff --git a/src/patches/inputChevronColor.test.ts b/src/patches/inputChevronColor.test.ts
+index 7f570d8..780141c 100644
+--- a/src/patches/inputChevronColor.test.ts
++++ b/src/patches/inputChevronColor.test.ts
+@@ -97,4 +97,16 @@ describe('writeInputChevronColor', () => {
+     expect(result).not.toBeNull();
+     expect(result).toContain('color:X$?W$:"blue",dimColor:!1');
+   });
++
++  it('handles the CC 2.1.257 bare JSX factory', () => {
++    const input =
++      ',{isLoading:yst,isScreenReader:Sst,themeColor:MVn}=PVn,kst=MVn??void 0,qxe;' +
++      'if(eeo[0]!==Sst)qxe=Sst?e(U,{children:"$\\xA0"}):r(U,{children:[N.pointer,"\\xA0"]});' +
++      'let teo;if(eeo[2]!==kst||eeo[3]!==yst||eeo[4]!==qxe)' +
++      'teo=e(n,{color:kst,dimColor:yst,children:qxe}),eeo[2]=kst;else teo=eeo[5]';
++    const result = writeInputChevronColor(input, 'red');
++
++    expect(result).not.toBeNull();
++    expect(result).toContain('color:yst?kst:"red",dimColor:!1');
++  });
+ });
+diff --git a/src/patches/inputChevronColor.ts b/src/patches/inputChevronColor.ts
+index 82a82b2..e4d7ae9 100644
+--- a/src/patches/inputChevronColor.ts
++++ b/src/patches/inputChevronColor.ts
+@@ -6,7 +6,7 @@ export const writeInputChevronColor = (
+   resolvedColor: string
+ ): string | null => {
+   const pattern =
+-    /,\{isLoading:([$\w]+),(?:[$\w]+:[$\w]+,)*themeColor:([$\w]+)\}=[$\w]+,([$\w]+)=\2\?\?void 0[,;][\s\S]*?if\([^)]*!==\3[^)]*\|\|[^)]*!==\1[^)]*\)[$\w]+=[$\w]+\.jsxs?\([$\w]+,\{color:\3,dimColor:\1,children:/;
++    /,\{isLoading:([$\w]+),(?:[$\w]+:[$\w]+,)*themeColor:([$\w]+)\}=[$\w]+,([$\w]+)=\2\?\?void 0[,;][\s\S]{0,1200}?if\([^)]*!==\3[^)]*\|\|[^)]*!==\1[^)]*\)[$\w]+=(?:[$\w]+\.jsxs?|[$\w]+)\([$\w]+,\{color:\3,dimColor:\1,children:/;
+ 
+   const match = file.match(pattern);
+ 
+diff --git a/src/patches/opusplan1m.test.ts b/src/patches/opusplan1m.test.ts
+index 7fcd856..f9b4491 100644
+--- a/src/patches/opusplan1m.test.ts
++++ b/src/patches/opusplan1m.test.ts
+@@ -18,4 +18,25 @@ describe('writeOpusplan1m', () => {
+     expect(result).not.toBeNull();
+     expect(result).toContain('"opusplan[1m]"');
+   });
++
++  it('handles the CC 2.1.257 alias normalizer and wrapped selector chain', () => {
++    const file = [
++      'function kme(e){if(e==="opusplan"||e==="opusplan[1m]")return"opus";return null}',
++      'function z4t(e){let n=kme(e),r=n==="opus"&&(e==="opusplan[1m]"||xE());return r}',
++      '["sonnet","opus","haiku","sonnet[1m]","opusplan"];',
++      'if(A==="opusplan")return"Opus in plan mode, else Sonnet";',
++      'if(A==="opusplan")return"Opus Plan";',
++      'if(T===null||o.some((U)=>U.value===T))return mH(o,n);',
++      'else if(T==="opusplan")return mH([...o,eXr()],n);',
++      'else if(T==="opus")return mH(o,n);',
++    ].join('');
++
++    const result = writeOpusplan1m(file)!;
++
++    expect(result).not.toBeNull();
++    expect(result).toContain('else if(T==="opusplan[1m]")');
++    expect(result).toContain('mH([...o,{value:"opusplan[1m]"');
++    expect(result).toContain('o.push({value:"opusplan"');
++    expect(() => new Function(`function f(){${result}}`)).not.toThrow();
++  });
+ });
+diff --git a/src/patches/opusplan1m.ts b/src/patches/opusplan1m.ts
+index f29165c..5d5a2b2 100644
+--- a/src/patches/opusplan1m.ts
++++ b/src/patches/opusplan1m.ts
+@@ -34,7 +34,19 @@ const patchModeSwitchingFunction = (oldFile: string): string | null => {
+   if (!match || match.index === undefined) {
+     const nativePattern =
+       /if\s*\(\s*\(?[$\w]+\s*===\s*"opusplan"\s*\|\|\s*[$\w]+\s*===\s*"opusplan\[1m\]"\)?\s*&&\s*[$\w]+\s*===\s*"plan"\s*&&\s*![$\w]+\s*\)/;
+-    if (nativePattern.test(oldFile)) return oldFile;
++    // CC 2.1.257 moved mode switching behind an alias normalizer. Seeing both
++    // aliases map to Opus there, plus the explicit 1M branch in model
++    // resolution, proves the old conditional no longer needs surgery.
++    const nativeNormalizerPattern =
++      /function [$\w]+\(([$\w]+)\)\{if\(\1==="opusplan"\|\|\1==="opusplan\[1m\]"\)return"opus";/;
++    const nativeOneMillionPattern =
++      /==="opus"&&\([$\w]+==="opusplan\[1m\]"\|\|[$\w]+\(\)\)/;
++    if (
++      nativePattern.test(oldFile) ||
++      (nativeNormalizerPattern.test(oldFile) &&
++        nativeOneMillionPattern.test(oldFile))
++    )
++      return oldFile;
+ 
+     console.error(
+       'patch: opusplan1m: patchModeSwitchingFunction: failed to find mode switching pattern'
+@@ -214,7 +226,7 @@ const patchModelSelectorOptions = (oldFile: string): string | null => {
+   // We need to add a similar case for opusplan[1m]
+   // Capture groups: 1=fullMatch, 2=conditionVar (K), 3=listVar (A), 4=funcName (Mm3)
+   const pattern =
+-    /(if\s*\(\s*([$\w]+)\s*===\s*"opusplan"\s*\)\s*return\s*(?:[$\w]+\()?\[\s*\.\.\.([$\w]+)\s*,\s*([$\w]+)\(\)\s*\]\)?;)/;
++    /((else\s+)?if\s*\(\s*([$\w]+)\s*===\s*"opusplan"\s*\)\s*return\s*(?:[$\w]+\()?\[\s*\.\.\.([$\w]+)\s*,\s*[$\w]+\(\)\s*\](?:,[$\w]+)?\)?;)/;
+ 
+   const match = oldFile.match(pattern);
+   if (!match || match.index === undefined) {
+@@ -224,20 +236,24 @@ const patchModelSelectorOptions = (oldFile: string): string | null => {
+     return null;
+   }
+ 
+-  const [fullMatch, , varName, listVar] = match;
++  const [fullMatch, , elsePrefix, varName, listVar] = match;
+ 
+   const wrapperMatch = fullMatch.match(
+-    new RegExp(`return\\s*([$\\w]+)\\(\\s*\\[\\.\\.\\.${escapeIdent(listVar)}`)
++    new RegExp(
++      `return\\s*([$\\w]+)\\(\\s*\\[\\.\\.\\.${escapeIdent(listVar)}[\\s\\S]*?\\],([$\\w]+)\\)`
++    )
+   );
+   const wrapFn = wrapperMatch ? wrapperMatch[1] : null;
++  const wrapArg = wrapperMatch ? wrapperMatch[2] : null;
+ 
+   const newEntry = `{value:"opusplan[1m]",label:"Opus Plan Mode 1M",description:"Use Opus in plan mode, Sonnet (1M context) otherwise"}`;
+   const returnExpr = wrapFn
+-    ? `${wrapFn}([...${listVar},${newEntry}])`
++    ? `${wrapFn}([...${listVar},${newEntry}],${wrapArg})`
+     : `[...${listVar},${newEntry}]`;
+ 
+   const replacement =
+-    fullMatch + `if(${varName}==="opusplan[1m]")return ${returnExpr};`;
++    fullMatch +
++    `${elsePrefix ? 'else ' : ''}if(${varName}==="opusplan[1m]")return ${returnExpr};`;
+ 
+   const newFile =
+     oldFile.slice(0, match.index) +
+@@ -267,7 +283,7 @@ const patchAlwaysShowInModelSelector = (oldFile: string): string | null => {
+   // Find the pattern: if(K===null||A.some((VAR)=>VAR.value===K))return A;
+   // This is right before the opusplan conditional, and we want to inject pushes before this
+   const pattern =
+-    /(if\s*\(\s*[$\w]+\s*===\s*null\s*\|\|\s*([$\w]+)\.some\s*\(\s*\(\s*[$\w]+\s*\)\s*=>\s*[$\w]+\.value\s*===\s*[$\w]+\s*\)\s*\)\s*return\s*(?:[$\w]+\()?[$\w]+\)?\s*;)/;
++    /(if\s*\(\s*[$\w]+\s*===\s*null\s*\|\|\s*([$\w]+)\.some\s*\(\s*\(\s*[$\w]+\s*\)\s*=>\s*[$\w]+\.value\s*===\s*[$\w]+\s*\)\s*\)\s*return\s*(?:[$\w]+\()?[$\w]+(?:,[$\w]+)?\)?\s*;)/;
+ 
+   const match = oldFile.match(pattern);
+   if (!match || match.index === undefined) {
+diff --git a/src/patches/patchesAppliedIndication.test.ts b/src/patches/patchesAppliedIndication.test.ts
+new file mode 100644
+index 0000000..2e12862
+--- /dev/null
++++ b/src/patches/patchesAppliedIndication.test.ts
+@@ -0,0 +1,53 @@
++import { describe, expect, it } from 'vitest';
++
++import { writePatchesAppliedIndication } from './patchesAppliedIndication';
++
++const cc21257 =
++  'console.log(`${{}.VERSION} (Claude Code)`);' +
++  'function Header(){let H;' +
++  'H=r(n,{children:[e(n,{bold:!0,children:"Claude Code"})," ",' +
++  'r(n,{dimColor:!0,children:["v",V]})]});' +
++  'let C;C=r(o,{flexDirection:"column",children:[H,e(n,{children:"status"})]});return C}';
++
++describe('writePatchesAppliedIndication', () => {
++  it('uses the header module bare JSX factories and local components', () => {
++    const result = writePatchesAppliedIndication(
++      cc21257,
++      '4.3.3-local',
++      ['System prompt: changed'],
++      true,
++      true
++    )!;
++
++    expect(result).not.toBeNull();
++    expect(result).toContain('4.3.3-local (tweakcc)');
++    expect(result).toContain(
++      'r(n,{color:"#FF8400",bold:!0,children:"+ tweakcc v4.3.3-local"})'
++    );
++    expect(result).toContain('✓ tweakcc patches are applied');
++    expect(result).toContain('r(o,{flexDirection:"column",children:[');
++    expect(() => new Function(result)).not.toThrow();
++  });
++
++  it('finds the CC 2.1.257 memoized conditional header', () => {
++    const input =
++      'console.log(`${{}.VERSION} (Claude Code)`);' +
++      'function Header(){let Za;if(K[1]!==compact)Za=!compact&&r(U,{children:[' +
++      'flag?r(n,{children:[e(n,{bold:!0,children:"Claude Code"})," ",' +
++      'r(n,{dimColor:!0,children:["v",V]})]}):e(n,{children:"small"})]}),K[2]=Za;' +
++      'else Za=K[2];let el=e(n,{children:"status"});let tl;' +
++      'if(K[3]!==Za)tl=r(o,{flexDirection:"column",children:[Za,el]}),K[4]=tl;' +
++      'else tl=K[4];return tl}';
++    const result = writePatchesAppliedIndication(
++      input,
++      '4.3.3-local',
++      ['one'],
++      true,
++      true
++    )!;
++
++    expect(result).not.toBeNull();
++    expect(result).toContain('✓ tweakcc patches are applied');
++    expect(() => new Function(result)).not.toThrow();
++  });
++});
+diff --git a/src/patches/patchesAppliedIndication.ts b/src/patches/patchesAppliedIndication.ts
+index 1d741d0..0c66d01 100644
+--- a/src/patches/patchesAppliedIndication.ts
++++ b/src/patches/patchesAppliedIndication.ts
+@@ -52,7 +52,7 @@ const findTweakccVersionLocations = (
+   // Insert the tweakcc version as a sibling child right after the version element
+   // (before the outer children-array `]`).
+   const jsxVersionPattern =
+-    /([$\w]+)\.jsxs?\(([$\w]+),\{dimColor:!0,children:\["v",[$\w]+\]\}\)/;
++    /([$\w]+(?:\.jsxs?)?)\(([$\w]+),\{dimColor:!0,children:\["v",[$\w]+\]\}\)/;
+   const jsxMatch = fileContents.match(jsxVersionPattern);
+   if (jsxMatch && jsxMatch.index !== undefined) {
+     return {
+@@ -348,28 +348,46 @@ const findPatchesListLocation = (
+   // Insert the patches list as the last child of that column array. identifiers
+   // carries [jsxVar, boxVar] to signal jsx mode to the codegen.
+   const jsxVerMatch = fileContents.match(
+-    /([$\w]+)\.jsxs?\([$\w]+,\{dimColor:!0,children:\["v",[$\w]+\]\}\)/
++    /([$\w]+(?:\.jsxs?)?)\(([$\w]+),\{dimColor:!0,children:\["v",[$\w]+\]\}\)/
+   );
+   if (jsxVerMatch && jsxVerMatch.index !== undefined) {
+     const jsxVar = jsxVerMatch[1];
+     // Header row var = nearest `VAR=<jsxVar>.jsxs(TEXT,{children:[` before the version element.
+     const hdrAssignRe = new RegExp(
+-      `([$\\w]+)=${escapeIdent(jsxVar)}\\.jsxs\\([$\\w]+,\\{children:\\[`,
++      `([$\\w]+)=${escapeIdent(jsxVar)}\\([$\\w]+,\\{children:\\[`,
+       'g'
+     );
+     let hdrVar: string | undefined;
+     let m: RegExpExecArray | null;
+-    while ((m = hdrAssignRe.exec(fileContents)) !== null) {
+-      if (m.index > jsxVerMatch.index) break;
++    const directLookback = fileContents.slice(
++      Math.max(0, jsxVerMatch.index - 3000),
++      jsxVerMatch.index
++    );
++    while ((m = hdrAssignRe.exec(directLookback)) !== null) {
+       hdrVar = m[1];
+     }
++    if (!hdrVar) {
++      // CC 2.1.257 memoizes a conditional Fragment rather than assigning the
++      // Text row directly:
++      //   let Za;if(...)Za=!compact&&r(Fragment,{children:[...version...]});
++      // The version match lies inside that still-open assignment, so the last
++      // memo declaration in a tight lookback identifies the row variable.
++      const lookback = fileContents.slice(
++        Math.max(0, jsxVerMatch.index - 3000),
++        jsxVerMatch.index
++      );
++      const memoHeader = lookback.match(
++        /let ([$\w]+);if\([^;]{0,1400}\)\1=[^;]{0,1800}$/
++      );
++      if (memoHeader) hdrVar = memoHeader[1];
++    }
+     if (hdrVar) {
+       // Match the column box whose FIRST child is exactly the header row var
+       // (require `,`/`]` after it so we don't match a longer var like `_A`).
+       // Scope to a window just after the header so a far-away `[_,...]` column
+       // (e.g. the IDE-warning box) can't be picked instead.
+       const colRe = new RegExp(
+-        `${escapeIdent(jsxVar)}\\.jsxs\\(([$\\w]+),\\{flexDirection:"column",children:\\[${escapeIdent(hdrVar)}(?:,[^\\]]*)?\\]`
++        `${escapeIdent(jsxVar)}\\(([$\\w]+),\\{flexDirection:"column",children:\\[${escapeIdent(hdrVar)}(?:,[^\\]]*)?\\]`
+       );
+       const windowStart = jsxVerMatch.index;
+       const windowStr = fileContents.slice(windowStart, windowStart + 6000);
+@@ -382,7 +400,7 @@ const findPatchesListLocation = (
+         return {
+           startIndex: insertIndex,
+           endIndex: insertIndex,
+-          identifiers: [jsxVar, boxVar],
++          identifiers: [jsxVar, boxVar, jsxVerMatch[2]],
+         };
+       }
+     }
+@@ -523,31 +541,6 @@ export const writePatchesAppliedIndication = (
+     versionOutputLocation.endIndex
+   );
+ 
+-  // Find shared components needed by multiple patches
+-  const chalkVar = findChalkVar(fileContents);
+-  if (!chalkVar) {
+-    console.error(
+-      'patch: patchesAppliedIndication: failed to find chalk variable'
+-    );
+-    return null;
+-  }
+-
+-  const textComponent = findTextComponent(fileContents);
+-  if (!textComponent) {
+-    console.error(
+-      'patch: patchesAppliedIndication: failed to find text component'
+-    );
+-    return null;
+-  }
+-
+-  const reactVar = getReactVar(fileContents);
+-  if (!reactVar) {
+-    console.error(
+-      'patch: patchesAppliedIndication: failed to find React variable'
+-    );
+-    return null;
+-  }
+-
+   // PATCH 2: Add tweakcc version to all header paths.
+   // Path A: SyK banner borderText (chalk template literal)
+   // Path B: SyK compact borderText (chalk call)
+@@ -579,7 +572,7 @@ export const writePatchesAppliedIndication = (
+       // JSX runtime: insert the tweakcc version as a sibling child in the header
+       // children array, right after the version element (jsx takes children as a
+       // prop, so we can't reuse the classic createElement(type,props,...children)).
+-      const tweakccEl = `${locs.jsxVar}.jsx(${locs.textComponent},{children:${chalkVar}.hex("#FF8400").bold("+ tweakcc v${tweakccVersion}")})`;
++      const tweakccEl = `${locs.jsxVar}(${locs.textComponent},{color:"#FF8400",bold:!0,children:"+ tweakcc v${tweakccVersion}"})`;
+       const refCode = `," ",${tweakccEl}`;
+       const oldContent2 = content;
+       content =
+@@ -596,7 +589,7 @@ export const writePatchesAppliedIndication = (
+     } else {
+       // Step 1: Insert variable declaration after the "Claude Code" bold element
+       const varName = '_tw';
+-      const varDecl = `let ${varName}=${locs.reactVar}.createElement(${locs.textComponent},null,${chalkVar}.hex("#FF8400").bold("+ tweakcc v${tweakccVersion}"));`;
++      const varDecl = `let ${varName}=${locs.reactVar}.createElement(${locs.textComponent},{color:"#FF8400",bold:!0},"+ tweakcc v${tweakccVersion}");`;
+ 
+       const oldContent2a = content;
+       content =
+@@ -635,13 +628,6 @@ export const writePatchesAppliedIndication = (
+ 
+   // PATCH 3: Add patches applied list (if enabled)
+   if (showPatchesApplied) {
+-    const boxComponent = findBoxComponent(content);
+-    if (!boxComponent) {
+-      console.error(
+-        'patch: patchesAppliedIndication: PATCH 3 skipped (Box component not located on this CC version)'
+-      );
+-      return content;
+-    }
+     const patchesListLoc = findPatchesListLocation(content);
+     if (!patchesListLoc) {
+       console.error(
+@@ -649,24 +635,23 @@ export const writePatchesAppliedIndication = (
+       );
+     } else if (
+       patchesListLoc.identifiers &&
+-      patchesListLoc.identifiers.length === 2
++      patchesListLoc.identifiers.length === 3
+     ) {
+       // JSX automatic runtime: build the list with jsx-convention calls (children
+       // as a prop) using the module's jsx var and the column's box, since the
+       // React var has no `.createElement` on these bundles. Insert as the last
+       // child of the header's column array.
+-      const [jsxVar, listBox] = patchesListLoc.identifiers;
++      const [jsxVar, listBox, localText] = patchesListLoc.identifiers;
+       const rows: string[] = [];
+       rows.push(
+-        `${jsxVar}.jsxs(${listBox},{children:[${jsxVar}.jsx(${textComponent},{color:"success",bold:true,children:"┃ "}),${jsxVar}.jsx(${textComponent},{color:"success",bold:true,children:"✓ tweakcc patches are applied"})]})`
++        `${jsxVar}(${listBox},{children:[${jsxVar}(${localText},{color:"success",bold:!0,children:"┃ "}),${jsxVar}(${localText},{color:"success",bold:!0,children:"✓ tweakcc patches are applied"})]})`
+       );
+-      for (let item of patchesApplies) {
+-        item = item.replace('CHALK_VAR', chalkVar);
++      for (const item of patchesApplies) {
+         rows.push(
+-          `${jsxVar}.jsxs(${listBox},{children:[${jsxVar}.jsx(${textComponent},{color:"success",bold:true,children:"┃ "}),${jsxVar}.jsx(${textComponent},{dimColor:true,children:\`  * ${item}\`})]})`
++          `${jsxVar}(${listBox},{children:[${jsxVar}(${localText},{color:"success",bold:!0,children:"┃ "}),${jsxVar}(${localText},{dimColor:!0,children:\`  * ${item}\`})]})`
+         );
+       }
+-      const listEl = `${jsxVar}.jsxs(${listBox},{flexDirection:"column",children:[${rows.join(',')}]})`;
++      const listEl = `${jsxVar}(${listBox},{flexDirection:"column",children:[${rows.join(',')}]})`;
+       const patchesListCode = `,${listEl}`;
+       const oldContent3 = content;
+       content =
+@@ -681,6 +666,16 @@ export const writePatchesAppliedIndication = (
+         patchesListLoc.endIndex
+       );
+     } else {
++      const boxComponent = findBoxComponent(content);
++      const textComponent = findTextComponent(content);
++      const reactVar = getReactVar(content);
++      const chalkVar = findChalkVar(content);
++      if (!boxComponent || !textComponent || !reactVar || !chalkVar) {
++        console.error(
++          'patch: patchesAppliedIndication: legacy header components not located'
++        );
++        return content;
++      }
+       const lines = [];
+       lines.push(
+         `,${reactVar}.createElement(${boxComponent}, { flexDirection: "column" },`
+diff --git a/src/patches/thinkingVisibility.test.ts b/src/patches/thinkingVisibility.test.ts
+index caa2c08..dbacea7 100644
+--- a/src/patches/thinkingVisibility.test.ts
++++ b/src/patches/thinkingVisibility.test.ts
+@@ -32,6 +32,13 @@ const unrecognisedEarlyReturn =
+   'function oTd(e,q,z){let r=[];if(r.length===0)return null;' +
+   'return Ea.jsx(F,{children:r,isTranscriptMode:q,verbose:z})}';
+ 
++const cc21257 =
++  'function R(ve,xo,fs,$o,jp,Fp){switch(ve.type){' +
++  'case"thinking":{if(jp!==null&&Fp!==null&&jp(ve)){let p=Fp(ve);if(p)return p}' +
++  'if(!fs&&!$o){return null}let uo;' +
++  'uo=e(Di,{addMargin:xo,param:ve,isTranscriptMode:fs,verbose:$o});return uo}' +
++  'default:return null}}';
++
+ describe('thinkingVisibility', () => {
+   describe('writeThinkingVisibility', () => {
+     it('should not produce a syntax error on the CC 2.1.209 braces shape', () => {
+@@ -85,5 +92,14 @@ describe('thinkingVisibility', () => {
+     it('should return null when the thinking case is absent', () => {
+       expect(writeThinkingVisibility('function f(){return 1}')).toBeNull();
+     });
++
++    it('handles the CC 2.1.257 plugin-aware thinking branch', () => {
++      const result = writeThinkingVisibility(cc21257) as string;
++
++      expect(result).not.toContain('if(!fs&&!$o){return null}');
++      expect(result).toContain('isTranscriptMode:true,verbose:$o');
++      expect(result).toContain('jp!==null&&Fp!==null&&jp(ve)');
++      expect(() => new Function(result)).not.toThrow();
++    });
+   });
+ });
+diff --git a/src/patches/thinkingVisibility.ts b/src/patches/thinkingVisibility.ts
+index 9f0ee66..c33d297 100644
+--- a/src/patches/thinkingVisibility.ts
++++ b/src/patches/thinkingVisibility.ts
+@@ -41,10 +41,20 @@ export const writeThinkingVisibility = (oldFile: string): string | null => {
+   // - Group 2: `if(...) return null;` (the early return we want to remove)
+   // - Group 3: Everything from `{` or return up to `isTranscriptMode:`
+   // - Then the variable name followed by comma (replaced with `true,`)
+-  const pattern =
++  const legacyPattern =
+     /(case"thinking":\{?)(if\(.{0,80}?\)\s*(?:\{\s*return null\s*;?\s*\}|return null\s*;?))(.{0,400}?isTranscriptMode:)([$\w]+)\s*,/;
+ 
+-  const match = oldFile.match(pattern);
++  // CC 2.1.257 can run plugin-specific thinking handling before the standard
++  // visibility guard. Anchor the replacement by requiring the same transcript
++  // variable in both the guard and the renderer props, while keeping the scan
++  // tightly bounded to this switch case.
++  const pluginAwarePattern =
++    /(case"thinking":\{[\s\S]{0,1000}?)(if\(!([$\w]+)&&![$\w]+\)\{return null;?\})([\s\S]{0,1000}?isTranscriptMode:)\3\s*,/;
++  // Try this stricter relationship-based form first. The older broad matcher
++  // can otherwise start at the plugin's `if` and consume that whole branch.
++  const pluginAwareMatch = oldFile.match(pluginAwarePattern);
++  const legacyMatch = pluginAwareMatch ? null : oldFile.match(legacyPattern);
++  const match = pluginAwareMatch ?? legacyMatch;
+ 
+   if (!match || match.index === undefined) {
+     console.error(
+@@ -54,7 +64,9 @@ export const writeThinkingVisibility = (oldFile: string): string | null => {
+   }
+ 
+   // Replacement: skip match[2] (removes the if-return-null), set isTranscriptMode to true
+-  const replacement = match[1] + match[3] + 'true,';
++  const replacement = pluginAwareMatch
++    ? match[1] + match[4] + 'true,'
++    : match[1] + match[3] + 'true,';
+ 
+   const startIndex = match.index;
+   const endIndex = startIndex + match[0].length;
+diff --git a/src/patches/userMessageDisplay.test.ts b/src/patches/userMessageDisplay.test.ts
+new file mode 100644
+index 0000000..5c51853
+--- /dev/null
++++ b/src/patches/userMessageDisplay.test.ts
+@@ -0,0 +1,40 @@
++import { describe, expect, it } from 'vitest';
++
++import { writeUserMessageDisplay } from './userMessageDisplay';
++import type { UserMessageDisplayConfig } from '../types';
++
++const config: UserMessageDisplayConfig = {
++  format: ' > {} ',
++  foregroundColor: 'rgb(1,2,3)',
++  backgroundColor: 'default',
++  borderStyle: 'none',
++  borderColor: 'rgb(4,5,6)',
++  paddingX: 0,
++  paddingY: 0,
++  fitBoxToContent: false,
++  styling: ['bold'],
++};
++
++const cc21257 =
++  '//__TWEAKCC_MODULE_BOUNDARY__\n' +
++  'function cR(x5){let Ku=y(19),{addMargin:_5,param:P5}=x5,{text:Oa}=P5;' +
++  'let Vu=TWe(Oa);if(!Oa){return h(Error("No content found in user prompt message")),null}' +
++  'let Yu=!1,uS=void 0,mR;if(Ku[10]!==Vu||Ku[11]!==uS||Ku[12]!==Yu)' +
++  'mR=e(CWe,{text:Vu,useBriefLayout:Yu,timestamp:uS}),Ku[13]=mR;else mR=Ku[13];' +
++  'let bI;bI=e(o,{flexDirection:"column",marginTop:0,children:mR});return bI}' +
++  'function wI(Xu,W5){return e(o,{children:r(n,{children:[e(n,{color:"success",children:"x"})]})},W5)}' +
++  '\n//__TWEAKCC_MODULE_BOUNDARY__';
++
++describe('writeUserMessageDisplay', () => {
++  it('uses module-local JSX, Box, and Text identifiers on CC 2.1.257', () => {
++    const result = writeUserMessageDisplay(cc21257, config)!;
++
++    expect(result).not.toBeNull();
++    expect(result).toContain(
++      'mR=e(o,{children:e(n,{color:"rgb(1,2,3)",bold:!0,children:` > ${Vu} `})})'
++    );
++    expect(result).toContain('bI=e(o,{flexDirection:"column"');
++    expect(result).not.toContain('CHALK_VAR');
++    expect(() => new Function(result)).not.toThrow();
++  });
++});
+diff --git a/src/patches/userMessageDisplay.ts b/src/patches/userMessageDisplay.ts
+index 4e82914..dd3dac6 100644
+--- a/src/patches/userMessageDisplay.ts
++++ b/src/patches/userMessageDisplay.ts
+@@ -123,6 +123,115 @@ export const writeUserMessageDisplay = (
+   oldFile: string,
+   config: UserMessageDisplayConfig
+ ): string | null => {
++  // CC 2.1.257 code-splits the UI. Identifiers are module-local, so global
++  // component/chalk discovery can return names that do not exist in this
++  // component's module. Derive JSX, Box, Text, and the message from the same
++  // user-message module and express styling as Ink props (no chalk dependency).
++  const splitPattern =
++    /(No content found in user prompt message[\s\S]{0,1400}?)([$\w]+)=([$\w]+)\(([$\w]+),\{text:([$\w]+),useBriefLayout:([$\w]+),timestamp:([$\w]+)\}\)([\s\S]{0,700}?[$\w]+=\3\(([$\w]+),\{flexDirection:"column"[^}]*children:\2\}\))/;
++  const splitMatch = oldFile.match(splitPattern);
++  if (splitMatch && splitMatch.index !== undefined) {
++    const [
++      ,
++      ,
++      childVar,
++      jsxVar,
++      childComponent,
++      messageVar,
++      briefVar,
++      timestampVar,
++      ,
++      boxComponent,
++    ] = splitMatch;
++    const moduleEnd = oldFile.indexOf(
++      '//__TWEAKCC_MODULE_BOUNDARY__',
++      splitMatch.index + splitMatch[0].length
++    );
++    const searchEnd = moduleEnd === -1 ? oldFile.length : moduleEnd;
++    const localTail = oldFile.slice(
++      splitMatch.index + splitMatch[0].length,
++      Math.min(searchEnd, splitMatch.index + splitMatch[0].length + 3000)
++    );
++    const textPattern = new RegExp(
++      `function [$\\w]+\\([^)]*\\)\\{return ${jsxVar}\\(${boxComponent},\\{children:[$\\w]+\\(([$\\w]+),\\{children:\\[`
++    );
++    const textMatch = localTail.match(textPattern);
++    if (!textMatch) {
++      console.error(
++        'patch: userMessageDisplay: failed to find module-local Text component'
++      );
++      return null;
++    }
++    const textComponent = textMatch[1];
++
++    const boxAttrs: string[] = [];
++    const isCustomBorder = config.borderStyle.startsWith('topBottom');
++    if (config.borderStyle !== 'none') {
++      if (isCustomBorder) {
++        const glyph =
++          config.borderStyle === 'topBottomDouble'
++            ? '═'
++            : config.borderStyle === 'topBottomBold'
++              ? '━'
++              : '─';
++        boxAttrs.push(
++          `borderStyle:{top:"${glyph}",bottom:"${glyph}",left:" ",right:" ",topLeft:" ",topRight:" ",bottomLeft:" ",bottomRight:" "}`
++        );
++      } else {
++        boxAttrs.push(`borderStyle:${JSON.stringify(config.borderStyle)}`);
++      }
++      const borderRgb = config.borderColor.match(/\d+/g);
++      if (borderRgb) boxAttrs.push(`borderColor:"rgb(${borderRgb.join(',')})"`);
++    }
++    if (config.paddingX > 0) boxAttrs.push(`paddingX:${config.paddingX}`);
++    if (config.paddingY > 0) boxAttrs.push(`paddingY:${config.paddingY}`);
++    if (config.fitBoxToContent) boxAttrs.push('alignSelf:"flex-start"');
++
++    const textAttrs: string[] = [];
++    if (config.foregroundColor !== 'default') {
++      const rgb = config.foregroundColor.match(/\d+/g);
++      if (rgb) textAttrs.push(`color:"rgb(${rgb.join(',')})"`);
++    }
++    if (
++      config.backgroundColor !== 'default' &&
++      config.backgroundColor !== null
++    ) {
++      const rgb = config.backgroundColor.match(/\d+/g);
++      if (rgb) textAttrs.push(`backgroundColor:"rgb(${rgb.join(',')})"`);
++    }
++    for (const style of config.styling) textAttrs.push(`${style}:!0`);
++
++    const escapedFormat = config.format
++      .replace(/\\/g, '\\\\')
++      .replace(/`/g, '\\`')
++      .replace(/\$\{/g, '\\${')
++      .replace(/\{\}/g, `\${${messageVar}}`);
++    const textProps = [...textAttrs, `children:\`${escapedFormat}\``].join(',');
++    const boxProps = [
++      ...boxAttrs,
++      `children:${jsxVar}(${textComponent},{${textProps}})`,
++    ].join(',');
++    const oldAssignment = `${childVar}=${jsxVar}(${childComponent},{text:${messageVar},useBriefLayout:${briefVar},timestamp:${timestampVar}})`;
++    const assignmentOffset = splitMatch[0].indexOf(`${childVar}=${jsxVar}(`);
++    const assignmentEnd = splitMatch[0].indexOf(')', assignmentOffset) + 1;
++    const replacement = `${childVar}=${jsxVar}(${boxComponent},{${boxProps}})`;
++    const startIndex = splitMatch.index + assignmentOffset;
++    const endIndex = splitMatch.index + assignmentEnd;
++    const newFile =
++      oldFile.slice(0, startIndex) + replacement + oldFile.slice(endIndex);
++
++    // Keep this assertion close to the surgery: if upstream introduces nested
++    // props, the simple assignment end calculation must fail closed.
++    if (oldFile.slice(startIndex, endIndex) !== oldAssignment) {
++      console.error(
++        'patch: userMessageDisplay: ambiguous code-split child assignment'
++      );
++      return null;
++    }
++    showDiff(oldFile, newFile, replacement, startIndex, endIndex);
++    return newFile;
++  }
++
+   const textComponent = findTextComponent(oldFile);
+   if (!textComponent) {
+     console.error('patch: userMessageDisplay: failed to find Text component');
+diff --git a/src/patches/verboseProperty.test.ts b/src/patches/verboseProperty.test.ts
+index 9b6a7d1..09020fb 100644
+--- a/src/patches/verboseProperty.test.ts
++++ b/src/patches/verboseProperty.test.ts
+@@ -22,6 +22,13 @@ describe('writeVerboseProperty', () => {
+     expect(result).toContain('verbose:true');
+   });
+ 
++  it('forces verbose:true when a code-split module imports a bare JSX factory', () => {
++    const input = `e(HJa,{${spinnerProps}})`;
++    const result = writeVerboseProperty(input);
++    expect(result).not.toBeNull();
++    expect(result).toContain('verbose:true');
++  });
++
+   it('still handles the legacy createElement form', () => {
+     const input = `R.createElement(HJa,{${spinnerProps}})`;
+     const result = writeVerboseProperty(input);
+diff --git a/src/patches/verboseProperty.ts b/src/patches/verboseProperty.ts
+index 0bbb0c2..34db4ca 100644
+--- a/src/patches/verboseProperty.ts
++++ b/src/patches/verboseProperty.ts
+@@ -5,11 +5,12 @@ import { LocationResult, showDiff } from './index';
+ const getVerbosePropertyLocation = (oldFile: string): LocationResult | null => {
+   // CC >=2.1.x compiles the UI with the React JSX automatic runtime, so the
+   // spinner element is emitted as `X.jsx(C,{...})` / `X.jsxs(C,{...})` rather
+-  // than `X.createElement(C,{...})`. Accept all three call forms.
++  // than `X.createElement(C,{...})`. Code-split Bun modules may import those
++  // factories directly (`e(C,{...})`), so accept that form too.
+   const createElementPattern =
+-    /(?:[$\w]+\.)?(?:createElement|jsxs?)\([$\w]+,\{(?=[^}]*responseLengthRef:)(?=[^}]*spinnerSuffix:)(?=[^}]*thinkingStatus:)(?=[^}]*isCompacting:)[^}]*verbose:[^,}]+[^}]*\}/;
++    /(?:[$\w]+\.(?:createElement|jsxs?)|[$\w]+)\([$\w]+,\{(?=[^}]*responseLengthRef:)(?=[^}]*spinnerSuffix:)(?=[^}]*thinkingStatus:)(?=[^}]*isCompacting:)[^}]*verbose:[^,}]+[^}]*\}/;
+   const legacyCreateElementPattern =
+-    /(?:createElement|jsxs?)\([$\w]+,\{[^}]+spinnerTip[^}]+overrideMessage[^}]+\}/;
++    /(?:[$\w]+\.(?:createElement|jsxs?)|[$\w]+)\([$\w]+,\{[^}]+spinnerTip[^}]+overrideMessage[^}]+\}/;
+   const createElementMatch =
+     oldFile.match(createElementPattern) ??
+     oldFile.match(legacyCreateElementPattern);

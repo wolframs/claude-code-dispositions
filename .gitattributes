@@ -1,0 +1,6 @@
+# Unified diff context lines for blank upstream source lines are a single
+# space by definition; they are not source-code trailing whitespace.
+tools/tweakcc-overlays/*.patch whitespace=-trailing-space
+
+# Immutable stock inputs are hash-pinned in release.json; never normalize them.
+baseline/** -text

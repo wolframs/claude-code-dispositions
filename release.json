@@ -1,0 +1,25 @@
+{
+  "_comment": "The compatibility checkpoint: which Claude Code release the edits were last checked against, the prompt map and tweakcc commit that check used, and the pristine binary hashes tools/build_ab.py accepts. Advancing it is a routine step, the 'After a prompt, locator or release change' runbook in spec/40, and not an approval gate. A dated observation, not a fleet poll; the per-machine state is TODO.md's machine table.",
+  "ccVersion": "2.1.280",
+  "observedAt": "2026-09-23",
+  "promptData": {
+    "path": "baseline/2.1.280/prompts.json",
+    "sha256": "b00e27cb24567f3801587eb80c0dfaa667af556d22fcdebeac94a45024a48da7",
+    "blob": "e6ceb4005fa53dd67ed6aeff944f163b3c74d7df",
+    "upstream": "Piebald-AI/tweakcc",
+    "commit": "b86c6685b942776549e5df98e499a1174807ff6f",
+    "reviewed": "Taken 2026-09-23 from tweakcc `main` — no trust gate needed this round: `prompts-2.1.280.json` had already merged as PR 1007 (`b86c6685`, 2026-09-23T14:08Z), so spec/45's pre-merge escape hatch did not apply. The cache entry tweakcc downloaded for itself round-trips to the published blob `e6ceb400`. The six fragments this repo edits are byte-identical to 2.1.278 in the map. Trust-gate criteria and the clone inventory: spec/45-pre-merge-tweakcc-data.md — amend it there, not here."
+  },
+  "tweakcc": {
+    "version": "4.3.3",
+    "commit": "f5aaf1e7c78359c20ecbac9fbe5dcaf699d80cf4",
+    "fetchRef": "pull/1005/head",
+    "overlay": "tools/tweakcc-overlays/4.3.3-cc-2.1.280.patch"
+  },
+  "stock": {
+    "linux-x64": "1e08503dbdf3c2cb0d706d32f3408277388d1c76ef108673e8fe42c1b322925b",
+    "win32-x64": "0e4195524b73eb77efbdf3e2b36de5322a29f0ca575dfd2d9b4f946b1d425469",
+    "darwin-arm64": "387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d"
+  },
+  "stockSource": "downloads.claude.ai/claude-code-releases/2.1.280/manifest.json (build 2026-09-21T20:55Z). darwin-arm64 is MEASURED: downloaded and re-hashed locally by ccctl.download_binary (size + SHA-256, 217254576 bytes) on macOS 2026-09-23. linux-x64 is MEASURED: downloaded and re-hashed locally by ccctl.download_binary, then re-hashed as the parked pristine (233709640 bytes) on Linux 2026-09-23. Both matched the manifest unchanged. win32-x64 is MEASURED: downloaded and re-hashed locally by ccctl.download_binary, then re-hashed as the installed pristine at versions/2.1.280 (237100192 bytes) on win32 2026-09-24; it matched the manifest unchanged, so all three entries are measured. Every entry must belong to THIS ccVersion: a hash from an earlier release is worse than no hash, because build_ab then blames the binary."
+}

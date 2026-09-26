@@ -1,0 +1,26 @@
+# secrets
+.env
+.env.*
+*.key
+*.pem
+
+# tweakcc working artefacts — large, machine-specific, regenerable
+*.backup
+native-binary*
+native-claudejs-*
+*.bin
+
+# node
+node_modules/
+.pnpm-store/
+.work/
+
+# editor / OS
+.directory
+.DS_Store
+*.swp
+
+# python bytecode — per-interpreter, per-machine, regenerable
+__pycache__/
+*.py[cod]
+.playwright-mcp/

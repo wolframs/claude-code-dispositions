@@ -1,0 +1,32 @@
+{
+  "system-prompt-communication-style": {
+    "stockSha256": "c184a5d4b4b6a0fc374a37c69f72937abf38bcccaa2d0cce0427968fcda3ccc7",
+    "editSha256": "5a2eb84a5c42df2f3419050139b36c6a10c40426091ee9fe409a025db5e7df04",
+    "reason": "Agent-reviewed 2026-09-21 against Claude Code 2.1.278: stock body byte-identical to 2.1.273, and to 2.1.257 before it, so the authored replacement still displaces exactly what it was written against. Not an operator sign-off. Reviewed against Claude Code 2.1.261 on 2026-09-05; stock unchanged from 2.1.257. Retain the authored disposition and deletion scope (spec/00, spec/10, spec/15)."
+  },
+  "system-prompt-correction-restraint": {
+    "stockSha256": "4593459b100aad5ebb50d2d34e3038ebc586db388eaa865d99000e2678985070",
+    "editSha256": "624e53634a2f63c46bbe639bd036c33c990632f5613508fd3eb80bd6ab20e9e2",
+    "reason": "Agent-reviewed 2026-09-21 against Claude Code 2.1.278: stock body byte-identical to 2.1.273, and to 2.1.257 before it, so the authored replacement still displaces exactly what it was written against. Not an operator sign-off. Reviewed against Claude Code 2.1.261 on 2026-09-05; stock unchanged from 2.1.257. Retain the authored disposition and deletion scope (spec/00, spec/10, spec/15)."
+  },
+  "system-prompt-delivering-work-at-full-scope": {
+    "stockSha256": "7e908e68a04f6843807edaad1c02377e546372c7c0c9d26b1a384eb280e472c8",
+    "editSha256": "b3ea74a7bfa5f61fbdd73d0319b9920c4458481ec5fe475dee5664e465b37c40",
+    "reason": "Operator clarification 2026-09-05 (notes/2026-09-05-task-authority.md, spec/10 v4.5): scoped reversible work and task-justified persistent settings are already authorized. Replaces the v4.4 unanswered-default clause; honesty and scope boundaries retained. 2026-09-25 (item 30, spec/15 section 5.5): 'report material choices and how to undo them' became 'report material choices, and leave the way back where the change lives', so rollback steps stop landing in the closing message. Stock unchanged 2.1.257 through 2.1.268."
+  },
+  "system-prompt-outcome-first-communication-style": {
+    "stockSha256": "c3a8ac527d27e2bd72cd9b35d031a24116bedd6cc96d444c7a38443b7e6f3a0a",
+    "editSha256": "3369521442ca35f16445b01388f8308e8788cec02b4689c8eae81d601589d202",
+    "reason": "Agent-reviewed 2026-09-21 against Claude Code 2.1.278: stock body byte-identical to 2.1.273, and to 2.1.257 before it, so the authored replacement still displaces exactly what it was written against. Not an operator sign-off. Reviewed against Claude Code 2.1.261 on 2026-09-05; stock unchanged from 2.1.257. Retain the authored disposition and deletion scope (spec/00, spec/10, spec/15)."
+  },
+  "system-prompt-subagent-delegation-examples": {
+    "stockSha256": "510c82185f3afb8489b3e1734367810a8deb553291385b7a48b68520ab3fc102",
+    "editSha256": "4f36cb568c3b769271803d070705abeab41946a224bd6682a3542e08386b3d12",
+    "reason": "Agent-reviewed 2026-09-21 against Claude Code 2.1.278: stock body byte-identical to 2.1.273, and to 2.1.257 before it, so the authored replacement still displaces exactly what it was written against. Not an operator sign-off. Reviewed against Claude Code 2.1.261 on 2026-09-05; stock unchanged from 2.1.257. Retain the authored disposition and deletion scope (spec/00, spec/10, spec/15)."
+  },
+  "tool-description-todowrite": {
+    "stockSha256": "5f6ca6307d8cf90b863d696d95359ccc216e380fadc94ad57fbefffd7b9a7b2c",
+    "editSha256": "4a6afe02ea1048b720353157b66451275f8d629fca6081937662acdbc3f97e01",
+    "reason": "Agent-reviewed 2026-09-21 against Claude Code 2.1.278: stock body byte-identical to 2.1.273, and to 2.1.257 before it, so the authored replacement still displaces exactly what it was written against. Not an operator sign-off. Reviewed against Claude Code 2.1.261 on 2026-09-05; stock unchanged from 2.1.257. Retain the authored disposition and deletion scope (spec/00, spec/10, spec/15)."
+  }
+}

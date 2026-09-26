@@ -1,0 +1,162 @@
+[
+  {
+    "id": "system-prompt-delivering-work-at-full-scope",
+    "kind": "fragment",
+    "title": "Delivery and task authority",
+    "intent": "Operator frame; ordinary reversible work is authorized, including task-justified persistent settings. Investigate rather than stall; never invent operator decisions.",
+    "source": "edits/system-prompt-delivering-work-at-full-scope.md",
+    "implementation": "plan_fragments",
+    "spec": "spec/00-disposition-spec.md",
+    "verification": "Unique stock span, exact replacement, markers and anti-markers; rendering is a separate claim."
+  },
+  {
+    "id": "system-prompt-outcome-first-communication-style",
+    "kind": "fragment",
+    "title": "Outcome-first communication",
+    "intent": "Final-answer delivery and surrounding-code idiom; universal reporting lives in the floor.",
+    "source": "edits/system-prompt-outcome-first-communication-style.md",
+    "implementation": "plan_fragments",
+    "spec": "spec/15-reporting-contract.md",
+    "verification": "Unique stock span, exact replacement, markers and anti-markers; rendering is a separate claim."
+  },
+  {
+    "id": "system-prompt-communication-style",
+    "kind": "fragment",
+    "title": "Communication style",
+    "intent": "Alternative communication fragment, including reasoning/text delivery distinction.",
+    "source": "edits/system-prompt-communication-style.md",
+    "implementation": "plan_fragments",
+    "spec": "spec/15-reporting-contract.md",
+    "verification": "Unique stock span, exact replacement, markers and anti-markers; rendering is a separate claim."
+  },
+  {
+    "id": "system-prompt-correction-restraint",
+    "kind": "fragment",
+    "title": "Correction restraint",
+    "intent": "Evidence-led corrections without repeated self-auditing.",
+    "source": "edits/system-prompt-correction-restraint.md",
+    "implementation": "plan_fragments",
+    "spec": "spec/00-disposition-spec.md",
+    "verification": "Unique stock span, exact replacement, markers and anti-markers; rendering is a separate claim."
+  },
+  {
+    "id": "tool-description-todowrite",
+    "kind": "fragment",
+    "title": "Task tracking",
+    "intent": "Keep task-state mechanics; remove the mass of stock worked examples.",
+    "source": "edits/tool-description-todowrite.md",
+    "implementation": "plan_fragments",
+    "spec": "spec/00-disposition-spec.md",
+    "verification": "Unique stock span, exact replacement, markers and anti-markers; rendering is a separate claim."
+  },
+  {
+    "id": "system-prompt-subagent-delegation-examples",
+    "kind": "fragment",
+    "title": "Delegation examples",
+    "intent": "Keep fork/non-fork briefing and honest asynchronous reporting.",
+    "source": "edits/system-prompt-subagent-delegation-examples.md",
+    "implementation": "plan_fragments",
+    "spec": "spec/00-disposition-spec.md",
+    "verification": "Unique stock span, exact replacement, markers and anti-markers; rendering is a separate claim."
+  },
+  {
+    "id": "delegation-override-cut",
+    "kind": "adhoc",
+    "title": "Delegation override removal",
+    "intent": "Remove the late delegation-suppression sections; other task/tool boundaries remain.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/00-disposition-spec.md",
+    "verification": "Unique stock structure and exact active-source replacement; see the generated source diff."
+  },
+  {
+    "id": "bypass-auto-shell-block-invert",
+    "kind": "adhoc",
+    "title": "Shell batching guidance",
+    "intent": "Prefer dedicated tools and use shell batching when it replaces several calls.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/00-disposition-spec.md",
+    "verification": "Unique stock structure and exact active-source replacement; see the generated source diff."
+  },
+  {
+    "id": "shell-steer-model-default-cut",
+    "kind": "adhoc",
+    "title": "Remove model-default Bash-first steer",
+    "intent": "Keep the strict shell batching guidance as the model default while preserving explicit client-data and GrowthBook arms for the relaxed variant.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/00-disposition-spec.md",
+    "verification": "The unique bashFirstSteerVariant selector loses only its model-capability fallback; status --delivered shows our shell block on Opus 5.5 SDK sessions without a server arm."
+  },
+  {
+    "id": "disposition-floor-under-every-output-style",
+    "kind": "adhoc",
+    "title": "Reporting floor",
+    "intent": "Append the reader/reporting contract through the shared output-style section.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/15-reporting-contract.md",
+    "verification": "Unique stock structure and exact active-source replacement; see the generated source diff."
+  },
+  {
+    "id": "lean-models-get-the-communication-fragment",
+    "kind": "adhoc",
+    "title": "Lean-model communication routing",
+    "intent": "Route the supported lean-model branch to the outcome-first fragment.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/15-reporting-contract.md",
+    "verification": "Unique stock structure and exact active-source replacement; see the generated source diff."
+  },
+  {
+    "id": "willow-tern-writing-style-cut",
+    "kind": "adhoc",
+    "title": "Competing writing-style removal",
+    "intent": "Remove the competing willow/tern writing calibration.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/15-reporting-contract.md",
+    "verification": "Unique stock structure and exact active-source replacement; see the generated source diff."
+  },
+  {
+    "id": "silent-turn-reminder-model-cut",
+    "kind": "adhoc",
+    "title": "Silent-turn nag model default removal",
+    "intent": "Take silent_turn_reminder out of every model clause of the capability gate, so the model default goes and server arms still reach their model; replaces the settings env mask that overrode them. Fable's clause since CC 2.1.270, Opus 5.5's since 2.1.280.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/00-disposition-spec.md",
+    "verification": "Unique stock structure and exact active-source replacement; see the generated source diff. Behaviour: status --delivered's tool loop sees no reminder on any model whose only claim to it was the model clause."
+  },
+  {
+    "id": "git-commit-authority",
+    "kind": "adhoc",
+    "title": "Git commit and push authority",
+    "intent": "Replace the Bash tool's compact rule that commits and pushes wait for the user to ask (branching first) with the operator's task-authority reading: committing finished work and pushing it to his own private repositories is part of the task; pushing to or opening a PR on anyone else's repository needs his go-ahead.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/00-disposition-spec.md",
+    "verification": "Unique template-form stock sentence and exact active-source replacement; status --delivered shows it in the Bash tool on compact-git models and DISPLACED where the long git block holds the slot. No anti-marker: the bundle's string table keeps a stock copy."
+  },
+  {
+    "id": "action-caution-outcome-line",
+    "kind": "adhoc",
+    "title": "Failed tests: say where the output is",
+    "intent": "In the lean models' action_caution section, 'say so with the output' becomes 'say so and where the output is': the failure is still named, the output gets a pointer instead of a paste in the closing message (the 2026-09-25 contract puts no method or evidence in the closer). Only that clause changes; 8 bytes longer, not padded.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/15-reporting-contract.md",
+    "verification": "Unique builder-anchored clause (function prologue + section opening) and exact active-source replacement; status --delivered shows it in the system prompt on lean models and DISPLACED if the stock clause is in the request. No anti-marker: the bundle's string table keeps a stock copy of the sentence."
+  },
+  {
+    "id": "bash-audience-note-result-not-output",
+    "kind": "adhoc",
+    "title": "Bash audience note: the meaning, not the output",
+    "intent": "The per-turn bash_output_audience_note ends by asking for what the user needs to be put 'in your reply', which pulls command output into the closing message; it now ends 'Say what it means for them, not what it printed.' The delivery fact before it and the note's gate are unchanged; 10 bytes shorter, not padded.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/15-reporting-contract.md",
+    "verification": "Unique whole-literal match and exact active-source replacement; the stock sentence is an anti-marker (one copy in stock 2.1.280, none after the rewrite). status --delivered sees it only in a session whose Bash output was long enough to fire the note."
+  }
+]

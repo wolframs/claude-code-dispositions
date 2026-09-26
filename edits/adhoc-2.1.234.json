@@ -1,0 +1,29 @@
+{
+  "ccVersion": "2.1.234",
+  "note": "String patches for prompt text tweakcc never extracted as fragments. Version-bound: minified identifiers (tXS, vgm, _i, Qs, xl, fu) change per CC build, so update-cc.sh must re-derive these against each new binary. Applied by tools/apply_adhoc.py after `tweakcc --apply` (which rebuilds from backup and would otherwise drop them).",
+  "patches": [
+    {
+      "name": "delegation-override-cut",
+      "why": "spec/10 item 6: the injected pair ('Do not call the AgentTool / workflows or deep-research unless the user requested it') contradicts the Agent tool description and duplicates the Workflow description's own opt-in gate. One owner, one statement. Early return also neutralizes the statsig override path (tengu_heron_brook), which could otherwise re-inject server-pushed text.",
+      "old": "function tXS(e){let t=LI()?.tengu_heron_brook;",
+      "new": "function tXS(e){return null;let t=LI()?.tengu_heron_brook;",
+      "marker": "function tXS(e){return null;"
+    },
+    {
+      "name": "bypass-auto-shell-block-invert",
+      "why": "spec/10 item 9: the shared template `o` (injected under bypass mode, auto mode, and the bashFirst flag) ordered cat/sed/heredoc editing over the dedicated Read/Edit/Write tools, against the harness fragment and Edit's read-before-edit precondition. Inverted, keeping only the token-cost intent (batching), so the mode headers above it stay coherent.",
+      "oldShape": "one template literal assigned to a minified variable (`o` on this build), five `${...}` interpolations in the order shell tool, three dedicated tools, shell tool again. Recorded by shape and digest rather than transcribed: the block is Anthropic's text, and a literal locator is the text it locates.",
+      "oldNormalizedLength": 323,
+      "oldSha256": "4e966188d3a7cda8e2bb9f416c5241bfdf1888673098b66b7f4e5378a42a38ef",
+      "oldSha256Note": "SHA-256 of the literal's body with every `${...}` rewritten to `${}`, so the value survives per-build and per-platform minification. Identical on 2.1.234, 2.1.273 (linux-x64 and win32-x64) and 2.1.278. The executable locator is ccctl.SHELL_BLOCK_SHA256; `tools/build_ab.py` reproduces the exact bytes from a pristine binary.",
+      "new": "o=`Prefer the dedicated ${Qs}, ${xl}, and ${fu} tools as usual. Use the ${_i} tool to batch work when one invocation genuinely replaces several separate calls.`",
+      "marker": "batch work when one invocation genuinely replaces several separate calls"
+    }
+  ],
+  "moot_on_this_binary": [
+    {
+      "name": "pronoun-block-dedup",
+      "finding": "2026-08-19: the pronoun paragraph exists exactly once in 2.1.234 linux JS (constant QYS, one pB('pronouns') use). The x2 seen when grepping the native binary is string-table duplication, not prompt duplication. C-04's duplicate sighting came from the win32 machine — stays on the win32 ccctl-snapshot list."
+    }
+  ]
+}

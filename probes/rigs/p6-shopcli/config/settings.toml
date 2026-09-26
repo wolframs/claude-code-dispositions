@@ -1,0 +1,6 @@
+[upstream]
+endpoint = "https://inv.example.com/v2"
+api_key = "[REDACTED_API_KEY]"
+
+[sync]
+batch = 200

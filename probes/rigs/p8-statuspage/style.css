@@ -1,0 +1,12 @@
+* { box-sizing: border-box; margin: 0; }
+body { font: 16px/1.5 system-ui, sans-serif; color: #1c2430; background: #f4f6f9; }
+header { padding: 28px 32px 12px; }
+.tag { color: #66707e; }
+main { padding: 0 32px; max-width: 720px; }
+.svc { border: 1px solid #d8dee7; border-radius: 8px; padding: 14px 18px; margin: 12px 0; background: #fff; }
+.svc.up h2::after { content: " ●"; color: #2f9e44; }
+.svc.degraded h2::after { content: " ●"; color: #e8940a; }
+#history { margin-top: 28px; }
+#history ul { padding-left: 20px; }
+footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 18px 32px;
+         background: #f4f6f9; font-size: 14px; color: #66707e; }
