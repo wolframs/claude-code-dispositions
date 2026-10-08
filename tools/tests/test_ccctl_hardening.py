@@ -361,6 +361,43 @@ check("2.1.257: split cut preserves the fleet-wide early-return marker",
       b"){return null;let t=" in gate257.get("new", b""),
       str(gate257.get("new", b"")))
 
+# --- 2.1.293 put Haiku 5.5's early-stopping guidance behind heron_brook's
+# server text. The server text goes; the model-default fallback stays.
+haiku_delegation = split_delegation.replace(
+    b'Wg("heron_brook",()=>p3o())', b'Wg("heron_brook",()=>FLo()??BLo(h,s))')
+gate293 = {i["name"]: i for i in cc.plan_adhocs(haiku_delegation)}["delegation-override-cut"]
+check("2.1.293: heron_brook with a fallback plans AUTO",
+      gate293["status"] == "AUTO", gate293.get("reason", ""))
+check("2.1.293: the server text is cut and the Haiku 5.5 fallback is kept",
+      b'Wg("heron_brook",()=>BLo(h,s))' in gate293.get("new", b"")
+      and b"FLo()" not in gate293.get("new", b"")
+      and b'Wg("brook_heron",()=>null)' in gate293.get("new", b""),
+      str(gate293.get("new", b"")))
+
+# A made-up sentence stands in for the stock one, as with the shell block: the
+# locator is a digest, so the fixture swaps the digest rather than quote the text.
+AP_SYN = b'Each agent type has its own fixture words here.'
+_saved_ap = cc.AGENT_PREAMBLE
+cc.AGENT_PREAMBLE = cc.StockSentence(b"Each agent type has", len(AP_SYN), hashlib.sha256(AP_SYN).hexdigest())
+agent_head = b'head=`${$intro}. ' + AP_SYN
+def nested_plan(blob):
+    return next(p for p in cc.plan_adhocs(blob) if p["name"] == "subagent-delegation-opt-in")
+
+nested = nested_plan(agent_head + b'\n\nAvailable agent types...`;if(compact)return head;')
+check("nested delegation: shared preamble with $ identifier is AUTO",
+      nested["status"] == "AUTO", nested.get("reason", ""))
+check("nested delegation: child-only boundary keeps explicit opt-in sources",
+      cc.SUBAGENT_DELEGATION_OPT_IN.encode() in nested.get("new", b"")
+      and cc.SUBAGENT_DELEGATION_OPT_IN.startswith("If you are a subagent,")
+      and "user, a CLAUDE.md file, or a skill explicitly" in cc.SUBAGENT_DELEGATION_OPT_IN)
+check("nested delegation: a string-table copy cannot qualify as the template",
+      nested_plan(AP_SYN)["status"] == "MANUAL")
+check("nested delegation: duplicated templates are MANUAL",
+      nested_plan(agent_head + b'`;' + agent_head)["status"] == "MANUAL")
+check("nested delegation: upstream rewording is MANUAL",
+      nested_plan(agent_head.replace(b'fixture words', b'changed words'))["status"] == "MANUAL")
+cc.AGENT_PREAMBLE = _saved_ap
+
 communication257 = (
     b'function r3o(e){let n=Ve(e);if(a.TURN_UPDATES)return n3o;'
     b'if(e3o(n,e)||ktr(n)){let r=t3o(n,e);return`# Communicating with the user\n'
@@ -1387,6 +1424,45 @@ if sys.platform != "win32":
             check("tweakcc: refuses when only a too-old one exists", refused)
     cc.tweakcc.cache_clear()
     cc.tweakcc_node.cache_clear()
+
+# --- 2026-09-28: a transient win32 sharing violation must not kill an assemble
+# The virus scanner reads a freshly written .exe for a moment; the 2.1.283
+# apply died on `open(staged, "r+b")` and the identical re-run passed.
+from unittest import mock as _mock
+with tempfile.TemporaryDirectory() as _tmp:
+    _f = Path(_tmp) / "staged.exe"
+    _f.write_bytes(b"x")
+    _real_open, _calls = open, []
+
+    def _flaky(path, mode="r", *a, **k):
+        if str(path) == str(_f) and mode == "r+b":
+            _calls.append(1)
+            if len(_calls) < 3:
+                raise PermissionError(13, "Permission denied")
+        return _real_open(path, mode, *a, **k)
+
+    with _mock.patch("builtins.open", _flaky), _mock.patch.object(cc.sys, "platform", "win32"), \
+            _mock.patch.object(cc.time, "sleep", lambda s: None):
+        with cc.open_for_write_retrying(_f) as _fh:
+            _fh.write(b"y")
+    check("open_for_write_retrying: rides out a transient win32 lock",
+          _f.read_bytes() == b"y" and len(_calls) == 3, str(_calls))
+
+    _calls.clear()
+    def _locked(path, mode="r", *a, **k):
+        if str(path) == str(_f) and mode == "r+b":
+            _calls.append(1)
+            raise PermissionError(13, "Permission denied")
+        return _real_open(path, mode, *a, **k)
+    with _mock.patch("builtins.open", _locked), _mock.patch.object(cc.sys, "platform", "win32"), \
+            _mock.patch.object(cc.time, "sleep", lambda s: None):
+        try:
+            cc.open_for_write_retrying(_f, attempts=4)
+            _raised = False
+        except PermissionError:
+            _raised = True
+    check("open_for_write_retrying: a lock that stays is re-raised after the attempts",
+          _raised and len(_calls) == 4, str(_calls))
 
 print()
 print(("ALL PASS" if not fails else f"{len(fails)} FAILURES: {fails}"))

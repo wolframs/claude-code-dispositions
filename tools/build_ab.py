@@ -87,8 +87,14 @@ def default_binary(release):
     version = release['ccVersion']
     home = Path.home()
     exe = '.exe' if sys.platform == 'win32' else ''
+    versions = home / '.local' / 'share' / 'claude' / 'versions'
+    # win32 keeps versions/<ver> pristine (the patched copy is the launcher);
+    # POSIX parks it as <ver>.stock. `update` moves the staged download into
+    # place, so after an update the staging copy is gone. The SHA-256 check in
+    # generate() refuses anything that is not the recorded pristine.
     for cand in (home / 'ccctl' / 'staging' / f'claude-{version}-pristine{exe}',
-                 home / '.local' / 'share' / 'claude' / 'versions' / f'{version}.stock'):
+                 versions / f'{version}.stock',
+                 *((versions / version,) if sys.platform == 'win32' else ())):
         if cand.is_file():
             return cand
     return None

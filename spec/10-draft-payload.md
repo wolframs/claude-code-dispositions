@@ -346,7 +346,10 @@ extends the list:
    `edits/adhoc-2.1.234.json` (delegation-override-cut): early-return in the
    injector kills both the hardcoded pair and the statsig
    (`tengu_heron_brook`) server-push path. The Agent tool description is now
-   the sole owner.
+   the sole owner. Since the operator's 2026-09-28 correction, its shared
+   preamble requires explicit opt-in for subagents delegating further
+   (`subagent-delegation-opt-in`, spec/00 section 8); parent delegation stays
+   available.
 7. **Trim `tool-description-workflow`** (19,115 chars — longer than most
    complete system prompts, loaded unconditionally) and the artifact
    guidance pair.

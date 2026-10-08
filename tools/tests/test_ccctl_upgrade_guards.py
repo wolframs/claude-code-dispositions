@@ -414,5 +414,20 @@ try:
 finally:
     cc.HERE = _saved_here
     _sh.rmtree(_tmp, ignore_errors=True)
+
+# --- carried-forward prompt maps (spec/45, 2026-10-08) -----------------------
+# A seeded map is preferred over upstream's forever, so its sidecar is the only
+# thing that keeps the exception visible.
+saved_twk = cc.TWEAKCC_DIR
+cc.TWEAKCC_DIR = sandbox / "twk"
+(cc.TWEAKCC_DIR / "prompt-data-cache").mkdir(parents=True)
+check("carried_map: no sidecar, no claim", cc.carried_map("2.1.294") is None)
+(cc.TWEAKCC_DIR / "prompt-data-cache" / "prompts-2.1.294.carried").write_text(
+    "tweakcc main 2.1.292 map (blob 52847061)\n", encoding="utf-8")
+check("carried_map: the sidecar's provenance is reported",
+      cc.carried_map("2.1.294") == "tweakcc main 2.1.292 map (blob 52847061)")
+check("carried_map: it names one version only", cc.carried_map("2.1.293") is None)
+cc.TWEAKCC_DIR = saved_twk
+
 print(f"\n{'FAILED: ' + ', '.join(fails) if fails else 'all upgrade-guard checks pass'}")
 sys.exit(1 if fails else 0)

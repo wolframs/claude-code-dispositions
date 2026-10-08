@@ -18,3 +18,5 @@ a turn of fifty tool calls that ended well
 each one a consequence, not an explanation
 say so and where the output is
 not what it printed
+If you are a subagent, do not spawn further subagents unless
+a thought per short paragraph, a blank line between them

@@ -760,7 +760,7 @@ bullets alone suffice.
 
 | metric | layer 1: state | layer 2: footprint | layer 3: consequences | layer 4: suggestions |
 | --- | --- | --- | --- | --- |
-| height | 1–2 sentences | ≤ 3 sentences | as many bullets as there are real consequences | a line or two |
+| height | 1–2 sentences | a few short lines | as many bullets as there are real consequences | a line or two |
 | width | — | — | one line per bullet | — |
 | density | enough to know whether to act | what changed; which repos, remotes (pushed or not), live systems | one consequence of doing nothing per bullet; no method, no explanation | — |
 | actionability | — | — | no fix attached | fixes and offers only here, skippable |
@@ -773,30 +773,34 @@ the analysis is the reply.
 What is installed, in the floor (the second paragraph and the first sentence
 of the last; the deployed bytes are in `ab/data.json`):
 
-> Then, in a few sentences, what changed and what it touched: which repos,
-> which remotes, which live systems. Then, as terse bullets, what happens if
+> Then, in a few short lines, what changed and what it touched: which repos,
+> which remotes, which live systems. Then, as one-line bullets, what happens if
 > they do nothing — each one a consequence, not an explanation, and none
 > carrying the fix. Suggestions and offers come last, where they can be
 > skipped, and as statements, not questions. How the work was done, checked
 > or diagnosed is not in the message:
 > a turn of fifty tool calls that ended well is reported in the same few
-> sentences as a turn of two. When the ask was to find out, the analysis is
+> lines as a turn of two. When the ask was to find out, the analysis is
 > the answer; when it was to fix, an analysis worth keeping goes in
 > `reports/` in the active repo with one line pointing at it — and most turns
 > need none. They will ask for detail when it matters to them.
 >
-> A list is for content that is one; a paragraph does not open with a bold
-> label.
+> For the pane: short sentences, a thought per short paragraph, a blank line
+> between them. A bullet is one line. Bold marks a word worth finding, not the
+> opening of every bullet. An emoji or glyph is welcome where it marks
+> something.
+
+(The pane paragraph before it and the voice paragraph after it are §5.6.)
 
 | Line | Class (§7.3) | Answers | Falsifier |
 | --- | --- | --- | --- |
 | "what changed and what it touched: which repos, which remotes, which live systems" | 1 — repair | AMA: *"a short description of the change and which repos, remotes and, if applicable, systems were touched"*. | Does the reply name every repo, remote (and whether it was pushed) and live system the turn touched, and nothing about how? |
-| "as terse bullets, what happens if they do nothing — each one a consequence, not an explanation, and none carrying the fix" | 1 — repair | AMA: *"terse bullets that don't necessarily explain the underlying situation but the consequences if I don't act"*. Replaces the 09-21 category keep-list, whose "with the output" invited the account behind each item. | Is each bullet one line, a consequence of inaction, with no cause story and no remedy? |
+| "as one-line bullets, what happens if they do nothing — each one a consequence, not an explanation, and none carrying the fix" | 1 — repair | AMA: *"terse bullets that don't necessarily explain the underlying situation but the consequences if I don't act"*. Replaces the 09-21 category keep-list, whose "with the output" invited the account behind each item. | Is each bullet one line, a consequence of inaction, with no cause story and no remedy? |
 | "Suggestions and offers come last, where they can be skipped, and as statements, not questions" | 1 — repair | AMA: *"consequences only, and any suggestions were offered towards the end"*. The statement form is for CC's session-state classifier (§5.5). | Does any suggestion or offer appear before the last bullet, or end in a question mark? |
 | "How the work was done, checked or diagnosed is not in the message: a turn of fifty tool calls …" | 1 — repair | The 09-25 recount: closers of 200–400 words narrating verification. A default, not a cap: "they will ask" still follows it. | Does the report's length track the turn's length rather than what changed? |
 | "When the ask was to find out, the analysis is the answer; when it was to fix, … `reports/` … and most turns need none" | 2 — outlet | AMA: *"`reports/` is probably a better to-be-created subdir if the need arises. That should not lead to a ton of output tokens being spent on reports by default though."* Without an outlet, the pull to explain lands in the closer. | On a fix ask, is there an analysis in the reply? Is there a report the turn did not need? |
 | "They will ask for detail when it matters to them" | 2 — the legal exit (spec/00 §7.1) | HT-568, in his words. When he asks, the detail is the answer. | — |
-| "A list is for content that is one; a paragraph does not open with a bold label" | 1 — repair | His "no house format" rule; the 09-25 count found two-thirds of closers made of bold-labelled paragraphs. The morning's "write the reply as prose" banned the consequence bullets he asked for. | Does any paragraph open with a bold label? Is each list a list? |
+| "For the pane: short sentences, a thought per short paragraph, a blank line between them. A bullet is one line. Bold marks a word worth finding …" | 1 — repair | 2026-10-08: *"the lack of line-breaks WITHIN paragraphs is my biggest gripe"*; the 09-25 form sentence left 3–5-line paragraphs and bold leads on bullets that carried a paragraph each (§5.6). | Does any paragraph run past three lines in an 80-column pane? Does any bullet wrap, or open with a bold label followed by more than a clause? |
 
 **It is a shape, not a cap, so §6 still holds.** It fixes an order and a
 per-bullet width and drops method; it compresses nothing, which is why it
@@ -828,6 +832,40 @@ a closing offer phrased as a question as a question to the owner, so the
 thread shows as waiting on him. The floor now asks for offers as statements.
 The audit's inventory, including the stock texts left alone because they are
 masked, off or server-armed, is in `notes/2026-09-25-report-contract-ama.md`.
+
+### 5.6 The pane and the voice (2026-10-08)
+
+The 09-25 form sentence fixed the bold-label paragraph and left the shape the
+operator then complained about: paragraphs of three to five lines with no break
+inside them, and bullets whose bold lead carries a paragraph. *"The lack of
+line-breaks WITHIN paragraphs is my biggest gripe."* The floor now says who is
+reading and where, in his words, and what form that place needs. It also
+admits a voice, which nothing in the prompt did before:
+
+> The reader usually sees this in a narrow and/or low-height terminal pane, in
+> small text, beside other sessions. The exceptions are dedicated agent
+> environments in a meta-harness, CC-CLI wrappers like T3 Code, chat interfaces
+> like Discord or Telegram, and anywhere the surrounding context says
+> otherwise. There, write for that medium.
+>
+> For the pane: short sentences, a thought per short paragraph, a blank line
+> between them. […]
+>
+> Voice is welcome too: dry humour, play, warmth, when the work leaves room for
+> them. Never in place of the facts, and never padding.
+
+| Line | Class (§7.3) | Answers | Falsifier |
+| --- | --- | --- | --- |
+| The pane and its exceptions | 3 — reader model | His sentence, nearly verbatim. The exceptions keep the form rules from fighting a chat interface or a wrapper that renders differently. | In a Discord- or T3-bound reply, does the form follow that medium rather than the pane? |
+| "a blank line between them" | 1 — repair | CC's markdown has `breaks:!1`: a lone newline inside a paragraph is a soft break, and a GUI wrapper may show it as a space. A blank line survives every renderer in play. | — (rendering, not behaviour; one reply viewed in CC and T3 Code settles it) |
+| "An emoji or glyph is welcome where it marks something. For faces, use cats (😸 😹 😼 🙀), not yellow smileys like 😃 or 🙂. People and gestures are fine." | 2 — permission, with one exclusion | *"the occasional emoji & glyph for marking stuff"*; no fixed set (*"let Claude be Claude"*), except the yellow smiley faces, which he reads as cursed: *"maybe we should have it be cat emojis instead of the somewhat cursed 😃 and 🙂 emojis"*, and *"Person shaped emojis are 100% okay, just not... like... those two"* (2026-10-08). | Do emoji mark status or decoration? Decoration on every line is the failure. Does a yellow smiley face appear? |
+| The voice paragraph | 2 — permission | `Claude<Playful, Sardonic, Focused, MoreWarmThanCold, …>`; *"a few things that break up the boring work routine"*. Bounded by "never in place of the facts, and never padding" so it cannot become filler (§6). | Does a joke replace a fact, or add a line that carries nothing? |
+
+Footprint and bullets are now counted in lines ("a few short lines",
+"one-line bullets"), which matches the width row of the §5.4 table. The full
+inventory of form-steering layers that this round read is
+`notes/evidence/2026-10-08-output-style-inventory.md`; the decisions are in
+`notes/2026-10-08-reply-form.md`.
 
 ## 6. What is deliberately not installed
 

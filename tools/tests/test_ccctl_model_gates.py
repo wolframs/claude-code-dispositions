@@ -273,87 +273,137 @@ check("drift: a clause whose model predicate cannot be resolved is reported",
       any("unresolved predicate" in line
           for line in cc.gate_drift({None: frozenset(["turn_updates"])}, "2.1.278")))
 
-# --- the binary mask (item 31) -----------------------------------------------
+# --- the binary mask: the reminder switched off at its consumer (2026-09-29) --
 #
-# `fable-silent-turn-reminder-model-cut` rewrites Fable's clause set minus the
-# reminder. What the table reads off a binary then has four states, and the
-# tripwire must tell them apart: the interim one (between pull and apply) must
-# not tell the operator to delete the env line that is still doing the work.
+# Item 31 cut the reminder out of the model clauses and let server arms through.
+# 2.1.284 armed it from Sonnet 5.5's catalogue entry and from client data, and
+# the operator narrowed the arm ruling: an arm that conflicts with an
+# established patch is masked. So the cut moved to the capability's one
+# consumer, and every route — env, clause, entry, arm — is behind it.
 
-_278_cut = _278.replace(b'"silent_turn_reminder",', b"")
+_PRED = ('function oVt(e){let n=Ue(e);return _2("silent_turn_reminder",n,e,'
+         'a.CLAUDE_CODE_SILENT_TURN_REMINDER)}').encode("latin-1")
+_PRED_OFF = _PRED.replace(b"return _2(", b"return!1&&_2(")
 _rows = lambda env, blob: {c: v for c, _var, _w, v in cc.model_gates(env, blob=blob)[0]}  # noqa: E731
-check("binary: an unpatched clause with no env line is UNMASKED",
-      _rows(_masked, _278)["silent_turn_reminder"] == "UNMASKED")
-check("binary: the patched clause with no env line is masked",
-      _rows(_masked, _278_cut)["silent_turn_reminder"] == "masked")
-check("binary: patched AND the env line is ENV OVERRIDE (it masks the server's arms too)",
-      _rows(_both_lines, _278_cut)["silent_turn_reminder"] == "ENV OVERRIDE")
-check("binary: unpatched with the env line is the interim 'masked by env', not an override",
-      _rows(_both_lines, _278)["silent_turn_reminder"] == "masked by env")
-check("binary: a binary with no Fable clause at all is UNVERIFIED, and the tripwire says so",
+
+
+def _off(blob):
+    return next(p for p in cc.plan_adhocs(blob) if p["name"] == "silent-turn-reminder-off")
+
+
+_both_lines = {**_masked, "CLAUDE_CODE_SILENT_TURN_REMINDER": "0"}
+check("binary: the stock predicate with no env line is UNMASKED",
+      _rows(_masked, _278 + _PRED)["silent_turn_reminder"] == "UNMASKED")
+check("binary: the cut predicate is masked, whatever the clauses say",
+      _rows(_masked, _278 + _PRED_OFF)["silent_turn_reminder"] == "masked")
+check("binary: cut AND the env line is simply masked (the line is redundant, not harmful)",
+      _rows(_both_lines, _278 + _PRED_OFF)["silent_turn_reminder"] == "masked")
+check("binary: cut beats an env line that would force it on",
+      _rows({**_masked, "CLAUDE_CODE_SILENT_TURN_REMINDER": "1"},
+            _278 + _PRED_OFF)["silent_turn_reminder"] == "masked")
+check("binary: uncut with the env line is the interim 'masked by env'",
+      _rows(_both_lines, _278 + _PRED)["silent_turn_reminder"] == "masked by env")
+check("binary: a binary with no reminder predicate is UNVERIFIED, and the tripwire says so",
       _rows(_masked, b"no gate here")["silent_turn_reminder"] == "UNVERIFIED"
       and ("silent_turn_reminder", "CLAUDE_CODE_SILENT_TURN_REMINDER", "UNVERIFIED")
       in cc.model_gates_unmasked(_masked, blob=b"no gate here"))
 check("binary: the tripwire is silent on the finished state",
-      cc.model_gates_unmasked(_masked, blob=_278_cut) == [])
-check("drift: our own cut of the Fable clause is not drift",
-      cc.gate_drift(cc.model_gate_clauses(_278_cut), "2.1.278") == [],
-      str(cc.gate_drift(cc.model_gate_clauses(_278_cut), "2.1.278")))
+      cc.model_gates_unmasked(_masked, blob=_278 + _PRED_OFF) == [])
+
+_off_item = _off(_280 + _PRED)
+check("adhoc: switches the predicate off with `return!1&&`, nothing else",
+      _off_item["status"] == "AUTO" and _off_item["old"] == _PRED[_PRED.index(b"return "):]
+      and _off_item["new"] == _PRED_OFF[_PRED_OFF.index(b"return!1"):], str(_off_item))
+check("adhoc: an already-cut predicate is NOOP", _off(_280 + _PRED_OFF)["status"] == "NOOP")
+check("adhoc: no predicate at all is MANUAL, never a silent NOOP",
+      _off(_280)["status"] == "MANUAL")
+check("adhoc: two consumers are MANUAL, not a guess",
+      _off(_280 + _PRED + b";" + _PRED.replace(b"oVt", b"xVt"))["status"] == "MANUAL")
+
+# A binary patched by the retired clause cut is still not drift.
+_280_cut = _280.replace(b'"silent_turn_reminder","thinking_display_updates"',
+                        b'"thinking_display_updates"').replace(
+    b'V=new Set(["silent_turn_reminder","quizzical_shore"])', b'V=new Set(["quizzical_shore"])')
+check("drift: a gate patched by the retired clause cut is not drift",
+      cc.gate_drift(cc.model_gate_clauses(_280_cut), "2.1.280") == [],
+      str(cc.gate_drift(cc.model_gate_clauses(_280_cut), "2.1.280")))
 check("LIVE_ROUTING: a patched clause still counts as per-model routing",
-      cc.LIVE_ROUTING["model-keyed capability clause"][2](_278_cut))
+      cc.LIVE_ROUTING["model-keyed capability clause"][2](_280_cut))
 
+# CC 2.1.283: the same three sets and predicates, but the disjunction is
+# computed into a local so client data can turn a model default OFF. The old
+# `if(...)return!0;` pattern then matched only the inner client-data test,
+# which names no set, and the parse read "no model clause". The statement
+# changed; the meaning of a set member did not.
+_283_GATE = ("function _2(e,n,r,l){if(l!==void 0)return l;let s=Um(n,e,r);"
+             "if(s!==void 0)return s;"
+             "let p=U.has(e)&&wle(n)||G.has(e)&&_4t(r)||V.has(e)&&gg(n),u=aRn(r);"
+             "if(p){if(u?.data?.[e]!==!1)return!0;return y(O,e,u),!1}"
+             "if(u?.data?.[e]!==!0)return!1;return y(W,e,u),!0}")
+_283 = (_280_CHAIN + ";" + _280_PREDS + _283_GATE).encode("latin-1")
+check("clauses: the 2.1.283 gate (clause in a local) parses to the same three arms",
+      cc.model_gate_clauses(_283) == cc.model_gate_clauses(_280),
+      str(cc.model_gate_clauses(_283)))
+check("drift: 2.1.283's gate matches the table",
+      cc.gate_drift(cc.model_gate_clauses(_283), "2.1.283") == [],
+      str(cc.gate_drift(cc.model_gate_clauses(_283), "2.1.283")))
+# A local that is NOT returned as true is not a model clause, whatever it holds.
+_283_unused = _283.replace(b"if(p){if(u?.data?.[e]!==!1)return!0;", b"if(q){if(u?.data?.[e]!==!1)return!0;")
+check("clauses: a local the gate never returns on is not read as a model clause",
+      cc.model_gate_clauses(_283_unused) == {}, str(cc.model_gate_clauses(_283_unused)))
 
-def _cut(blob):
-    return next(p for p in cc.plan_adhocs(blob) if p["name"] == "silent-turn-reminder-model-cut")
+# CC 2.1.284: Sonnet 5.5's own catalogue entry lists `silent_turn_reminder`,
+# and the gate's first rung returns true for a capability the entry lists,
+# before any clause. The clause parse cannot see that; the catalogue parse is
+# its detector. These fixtures are the entry shape as the bundle spells it.
+_CAT_SONNET55 = ('{id:"claude-sonnet-5-5",family:"sonnet",display_name:"Sonnet 5.5",'
+                 'pricing:"tier_2_10",capabilities:["effort","max_effort","lean_prompt",'
+                 '"refusal_fallback","silent_turn_reminder","org_locked_thinking"],'
+                 'default_effort:"medium",advisor_rank:3}')
+_CAT_OPUS55 = ('{id:"claude-opus-5-5",family:"opus",capabilities:["effort","lean_prompt",'
+               '"opus_5_5_prompt_bundle"],advisor_rank:4}')
+_CATALOGUE = ("var x8n={models:[" + _CAT_OPUS55 + "," + _CAT_SONNET55 + "]};").encode("latin-1")
+_284 = _CATALOGUE + _283 + _PRED
 
+check("catalogue: the 2.1.284 entry is read as a gate default of Sonnet 5.5 only",
+      cc.catalogue_gate_defaults(_284) == {"claude-sonnet-5-5": frozenset(["silent_turn_reminder"])},
+      str(cc.catalogue_gate_defaults(_284)))
+check("catalogue: 2.1.284 as shipped is described by the table (no drift)",
+      cc.gate_drift(cc.model_gate_clauses(_284), "2.1.284", cc.catalogue_gate_defaults(_284)) == [],
+      str(cc.gate_drift(cc.model_gate_clauses(_284), "2.1.284", cc.catalogue_gate_defaults(_284))))
+_284_done = _284.replace(_off(_284)["old"], _off(_284)["new"])
+check("catalogue: 2.1.284 with the predicate cut is masked, not drift, tripwire silent",
+      _rows(_masked, _284_done)["silent_turn_reminder"] == "masked"
+      and cc.gate_drift(cc.model_gate_clauses(_284_done), "2.1.284",
+                        cc.catalogue_gate_defaults(_284_done)) == []
+      and cc.model_gates_unmasked(_masked, blob=_284_done) == [])
+_284_old_cut = _284.replace(b'"refusal_fallback","silent_turn_reminder"', b'"refusal_fallback"')
+check("catalogue: an entry patched by the retired catalogue cut is not drift",
+      cc.gate_drift(cc.model_gate_clauses(_284_old_cut), "2.1.284",
+                    cc.catalogue_gate_defaults(_284_old_cut)) == [])
+# A model the table has never heard of arming a gate capability from its own
+# entry is the new-decider finding, exactly as an unknown clause is.
+_cat_new = cc.catalogue_drift({"claude-haiku-6": frozenset(["turn_updates"])}, "2.1.290")
+check("catalogue drift: an unknown entry arming a gate capability is NEW",
+      len(_cat_new) == 1 and "NEW catalogue default: claude-haiku-6" in _cat_new[0], str(_cat_new))
+check("catalogue drift: plain model features are never gate capabilities",
+      "lean_prompt" not in cc.GATED_CAPABILITIES and "effort" not in cc.GATED_CAPABILITIES)
 
-_item = _cut(_278)
-check("adhoc: derives the cut from the gate's own clause",
-      _item["status"] == "AUTO" and _item["old"] == _FABLE_SET.encode()[4:]
-      and _item["new"] == b'U=new Set(["turn_updates","bash_output_audience_note",'
-                          b'"thinking_display_updates"])', str(_item))
-check("adhoc: works on the 2.1.270 shape (one clause, the macOS build)", _cut(_270)["status"] == "AUTO")
-# A one-letter minified name is defined in many modules. The set the gate
-# reads is the nearest one BEFORE the gate, not the first in the bundle.
-_decoy = b'var U=new Set(["silent_turn_reminder","other"]);' + b"x" * 5000 + _278
-check("adhoc: an earlier module's `U` is not the gate's",
-      _cut(_decoy)["old"] == _FABLE_SET.encode()[4:], str(_cut(_decoy).get("old")))
-check("adhoc: a clause without the reminder is NOOP",
-      _cut(_278_cut)["status"] == "NOOP")
-check("adhoc: no gate at all is MANUAL, never a silent NOOP (the env line is gone)",
-      _cut(b"no gate here")["status"] == "MANUAL")
-
-# 2.1.280: the cut follows the CAPABILITY, not the model that carried it first.
-# Fable's clause and Opus 5.5's both lose the reminder in one span, the Opus 5
-# clause between them is carried through untouched, and `quizzical_shore` —
-# which is not prompt text — stays.
-_280_item = _cut(_280)
-check("adhoc: cuts the reminder out of EVERY model clause, in one span",
-      _280_item["status"] == "AUTO"
-      and _280_item["new"] == b'U=new Set(["turn_updates","bash_output_audience_note",'
-                              b'"thinking_display_updates"]),'
-                              b'G=new Set(["bison_cairn","larch_cistern"]),'
-                              b'V=new Set(["quizzical_shore"])', str(_280_item))
-check("adhoc: the span stops at the chain, not at the statement",
-      b"Y=64" not in _280_item["old"] and not _280_item["old"].startswith(b"var "),
-      str(_280_item["old"]))
-check("adhoc: the patched 2.1.280 gate is not drift, and the tripwire is silent",
-      cc.gate_drift(cc.model_gate_clauses(
-          _280.replace(_280_item["old"], _280_item["new"])), "2.1.280") == []
-      and cc.model_gates_unmasked(
-          _masked, blob=_280.replace(_280_item["old"], _280_item["new"])) == [])
-# If upstream ever separates the sets, swallowing whatever lands between them
-# would be the worst possible repair. Stopping the apply is the right answer.
-_280_split = _280.replace(b'G=new Set(["bison_cairn","larch_cistern"]),',
-                          b'G=new Set(["bison_cairn","larch_cistern"]);var Zq=nope(),')
-check("adhoc: sets that are no longer one chain are MANUAL, not a wide span",
-      _cut(_280_split)["status"] == "MANUAL"
-      and "one comma chain" in _cut(_280_split)["reason"], str(_cut(_280_split)))
-check("adhoc: the cut still covers both clauses when a predicate's chunk is far away",
-      _cut(_split)["old"] == _280_item["old"], str(_cut(_split).get("old")))
-check("adhoc: an unreadable clause that arms the reminder is MANUAL, never a partial cut",
-      _cut(_opaque)["status"] == "MANUAL"
-      and "cannot resolve" in _cut(_opaque)["reason"], str(_cut(_opaque)))
+# The narrowed arm rule (2026-09-29): an arm that conflicts with a patch is not
+# accepted, so an env line overriding it is not something to warn about.
+check("arm_conflicts: the reminder and a displacing client-data key conflict",
+      cc.arm_conflicts("silent_turn_reminder") and cc.arm_conflicts("tengu_cozy_teapot"))
+check("arm_conflicts: a consonant or inert key does not",
+      not cc.arm_conflicts("tengu_thrifty_sonic") and not cc.arm_conflicts("per_turn_effort")
+      and not cc.arm_conflicts("bash_output_audience_note"))
+_arm_rec = {"deliveredCapture": {"ccVersion": "2.1.284", "when": "2026-09-29T15:00:00+02:00",
+                                 "results": [{"shape": "sdk", "model": "sonnet",
+                                              "verdicts": {"x": "DISPLACED"},
+                                              "arms": {"x": "tengu_cozy_teapot=\"relaxed\""}}]}}
+check("delivered_summary: a target displaced by a server arm is a failure, not accepted",
+      "NOT: sdk/sonnet" in cc.delivered_summary("2.1.284", _arm_rec)
+      and "accepted" not in cc.delivered_summary("2.1.284", _arm_rec),
+      cc.delivered_summary("2.1.284", _arm_rec))
 
 # The speed-up that brought the tripwire under its 10 s hook timeout must not
 # change a single match.
@@ -369,7 +419,16 @@ check("MODEL_GATE_SET: still names the Fable clause's capabilities (LIVE_ROUTING
           for cap in cc.MODEL_GATE_CLAUSES["fable_5_1_prompt_bundle"][0]))
 check("MODEL_GATE_CLAUSES: every capability we mask is in a clause",
       all(any(cap in caps for caps, _since in cc.MODEL_GATE_CLAUSES.values())
-          for cap in cc.MODEL_GATES))
+          for cap, (_var, _what, how) in cc.MODEL_GATES.items() if how is not None))
+# 2.1.293 added gate capabilities that no clause carries: one from Haiku 5.5's
+# own catalogue entry, one only a server arm can turn on. Both are left on, and
+# both must still be gate capabilities, or catalogue_drift and flags go blind.
+check("MODEL_GATES: 2.1.293's catalogue and server-only capabilities are tracked",
+      {"haiku_5_5_early_stopping_guidance", "elapsed_time_reminder"} <= cc.GATED_CAPABILITIES
+      and cc.CATALOGUE_GATE_DEFAULTS["claude-haiku-5-5"][0] == ("haiku_5_5_early_stopping_guidance",))
+check("catalogue_drift: Haiku 5.5's own entry is described, not drift",
+      cc.catalogue_drift({"claude-haiku-5-5": frozenset({"haiku_5_5_early_stopping_guidance"})},
+                         "2.1.294") == [])
 
 
 # --- the live read-back (`status --live`) ---------------------------------

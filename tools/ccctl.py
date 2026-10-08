@@ -365,8 +365,9 @@ def clear_stock_arm():
 # ------------------------------------------------- live bundle window
 # CC is a Bun single-file executable: the JS lives in a blob that ELF carries
 # in a section named `.bun`, framed as [u64 length][blob] and terminated by a
-# 16-byte trailer. On linux tweakcc never rewrites that blob in place — every
-# write (its own `--apply` and every `adhoc-patch` alike) APPENDS a fresh copy
+# 16-byte trailer. The legacy Linux tweakcc repacker appends on every write;
+# current code-split adhocs use bun_source_patch instead (no per-target append).
+# On that legacy path, `--apply` and `adhoc-patch` APPEND a fresh copy
 # past the end of the writable PT_LOAD, repoints the section header and the
 # `BUN_COMPILED` pointer at it, extends the segment, and leaves the previous
 # copy in the file as unreferenced bytes. Measured on 2.1.241: +253 MB per
@@ -961,10 +962,26 @@ def bun_source_patch(target, old, new):
     if check is None or out.count(new) < 1:
         die("bun_source_patch self-check failed: rewritten table does not re-parse — bug, "
             "nothing was written")
-    with open(target, "r+b") as fh:
+    with open_for_write_retrying(target) as fh:
         fh.seek(wstart)
         fh.write(out)
     return True, f"Replaced 1 occurrence in module {table['mods'][owner]['name'].decode()}"
+
+
+def open_for_write_retrying(path, attempts=10, delay=1.0):
+    """`open(path, "r+b")`, retried while win32 refuses it. A freshly written
+    .exe is read by the virus scanner for a moment after tweakcc finishes, and
+    an open for writing then fails with a sharing violation (PermissionError)
+    that is gone a second later — measured on the 2.1.283 apply, 2026-09-28,
+    where it killed the assemble and the identical re-run passed. Anything
+    still locked after `attempts` is re-raised: that is a real holder."""
+    for i in range(attempts):
+        try:
+            return open(path, "r+b")
+        except PermissionError:
+            if sys.platform != "win32" or i == attempts - 1:
+                raise
+            time.sleep(delay)
 
 
 def binary_contains(binary, needles, live=True):
@@ -1341,6 +1358,12 @@ def shell_block_spans(blob):
     return out
 
 
+SUBAGENT_DELEGATION_OPT_IN = (
+    "If you are a subagent, do not spawn further subagents unless the user, a CLAUDE.md file, "
+    "or a skill explicitly asks you to delegate further. A task assignment alone is not that opt-in. "
+    "This restriction takes precedence over the delegation guidance below.")
+
+
 def plan_adhocs(blob):
     """Re-derive the tranche's adhoc patches against THIS build's minified
     identifiers (they differ per platform build: linux tXS/LI/xl = win32
@@ -1359,6 +1382,13 @@ def plan_adhocs(blob):
     # the shared registration site so none can re-introduce the delegation
     # prohibition. The deliberately unreachable `let t=` preserves the
     # cross-version verification marker used by already-patched 2.1.241/251.
+    #
+    # 2.1.293 gave heron_brook a model-default fallback behind the server text:
+    # `()=>serverText()??haikuGuidance(h,s)`. The fallback is Haiku 5.5's
+    # early-stopping guidance (capability `haiku_5_5_early_stopping_guidance`,
+    # flag `tengu_idempotent_wolf`), which is not a delegation prohibition and
+    # agrees with the delivering-work fragment, so the cut removes the server
+    # text and keeps the fallback (notes/2026-10-08-win32-2.1.294.md §2).
     m1n = ident_led(
         rb'([\w$]+)\("opus5_reduced_delegation",\(\)=>\{'
         rb'if\(![\w$]+\([\w$]+\)\)return null;'
@@ -1366,7 +1396,7 @@ def plan_adhocs(blob):
         rb'let ([\w$]+)=[\w$]+\(\)\?\.value;'
         rb'if\(\2\?\.includes\([\w$]+\)\|\|\2\?\.includes\([\w$]+\)\)return null;'
         rb'return [\w$]+\}\),'
-        rb'\1\("heron_brook",\(\)=>[\w$]+\(\)\),'
+        rb'\1\("heron_brook",\(\)=>[\w$]+\(\)(?:\?\?([\w$]+\([\w$,]*\)))?\),'
         rb'\1\("brook_heron",\(\)=>[\w$]+\([\w$]+\)\)', blob,
         b'("opus5_reduced_delegation",()=>{')
     if len(m1s) == 1 and not m1n:
@@ -1377,8 +1407,9 @@ def plan_adhocs(blob):
                     new=(f"function {fn}(e){{return null;let t={acc}()?.tengu_heron_brook;").encode("latin-1"))
     elif len(m1n) == 1 and not m1s:
         section = m1n[0].group(1).decode()
+        fallback = (m1n[0].group(3) or b"null").decode("latin-1")
         new1 = (f'{section}("opus5_reduced_delegation",function(){{return null;let t=0}}),'
-                f'{section}("heron_brook",()=>null),'
+                f'{section}("heron_brook",()=>{fallback}),'
                 f'{section}("brook_heron",()=>null)').encode("latin-1")
         item.update(status="AUTO", old=m1n[0].group(0), new=new1)
     elif m1s or m1n:
@@ -1392,6 +1423,24 @@ def plan_adhocs(blob):
                         "brook_heron, and reduced-delegation successors, then re-derive the cut "
                         "(intent: edits/targets.json and spec/00; the original locator is "
                         "edits/adhoc-2.1.234.json)")
+    plan.append(item)
+
+    item = {"name": "subagent-delegation-opt-in", "kind": "adhoc"}
+    # The shared preamble's sentence is found by digest (AGENT_PREAMBLE); what
+    # makes an occurrence the template is the `${intro}. ` that leads into it.
+    nested_matches = []
+    for at in AGENT_PREAMBLE.find_all(blob):
+        lead = AGENT_PREAMBLE_LEAD.search(blob[max(0, at - 64):at])
+        if lead:
+            nested_matches.append(lead.group(0) + blob[at:at + AGENT_PREAMBLE.length])
+    if len(nested_matches) == 1:
+        old = nested_matches[0]
+        item.update(status="AUTO", old=old, new=old + b"\n\n" + SUBAGENT_DELEGATION_OPT_IN.encode("ascii"))
+    else:
+        item.update(status="MANUAL",
+                    reason=f"shared Agent description preamble matches {len(nested_matches)}x",
+                    fix="locate the shared Agent tool description before its compact/lean/full branches; "
+                        "restore the subagent-only opt-in boundary there")
     plan.append(item)
 
     item = {"name": "bypass-auto-shell-block-invert", "kind": "adhoc"}
@@ -1591,13 +1640,13 @@ def plan_adhocs(blob):
         "to them.\\n\\n"
         "So open with where things stand, and name the thing you worked on. If they read "
         "two sentences and stop, they should know whether to act. Then, in a few "
-        "sentences, what changed and what it touched: which repos, which remotes, "
-        "which live systems. Then, as terse bullets, what happens if they do nothing "
+        "short lines, what changed and what it touched: which repos, which remotes, "
+        "which live systems. Then, as one-line bullets, what happens if they do nothing "
         "\\u2014 each one a consequence, not an explanation, and none carrying the fix. "
         "Suggestions and offers come last, where they can be skipped, and as statements, "
         "not questions. How the work was "
         "done, checked or diagnosed is not in the message: a turn of fifty tool calls "
-        "that ended well is reported in the same few sentences as a turn of two. When "
+        "that ended well is reported in the same few lines as a turn of two. When "
         "the ask was to find out, the analysis is the answer; when it was to fix, an "
         "analysis worth keeping goes in `reports/` in the active repo with one line "
         "pointing at it \\u2014 and most turns need none. They will ask for detail when "
@@ -1609,11 +1658,35 @@ def plan_adhocs(blob):
         "A phrase you coined this turn is not a name. Say what it means the first time "
         "you use it, or say what changed instead of naming it. The same goes for an "
         "abbreviation, and for a label that lives only in your record of the run.\\n\\n"
-        "A list is for content that is one; a paragraph does not open with a bold "
-        "label. A style may set how "
+        "The reader usually sees this in a narrow and/or low-height terminal pane, in "
+        "small text, beside other sessions. The exceptions are dedicated agent "
+        "environments in a meta-harness, CC-CLI wrappers like T3 Code, chat interfaces "
+        "like Discord or Telegram, and anywhere the surrounding context says otherwise. "
+        "There, write for that medium.\\n\\n"
+        "For the pane: short sentences, a thought per short paragraph, a blank line "
+        "between them. A bullet is one line. Bold marks a word worth finding, not the "
+        "opening of every bullet. An emoji or glyph is welcome where it marks "
+        "something. For faces, use cats (\\ud83d\\ude38 \\ud83d\\ude39 \\ud83d\\ude3c "
+        "\\ud83d\\ude40), not yellow smileys like \\ud83d\\ude03 or \\ud83d\\ude42. People "
+        "and gestures are fine.\\n\\n"
+        "Voice is welcome too: dry humour, play, warmth, when the work leaves room for "
+        "them. Never in place of the facts, and never padding. A style may set how "
         "much you write, in what form, and how proactive you are. It does not change "
         "who is reading."
     )
+    # 2026-10-08, operator: the 09-25 form sentence ("A list is for content that
+    # is one; a paragraph does not open with a bold label") left the shape he
+    # actually got: 3-5-line paragraphs with no break inside them, and bullets
+    # whose bold lead carries a dense paragraph. In his words, the CLI's "small
+    # text, many different panes" need "slightly shorter sentences spread across
+    # more lines, less dense paragraph blocks, the occasional emoji & glyph",
+    # and some voice. The pane sentence and its exceptions are his wording. The
+    # footprint is now counted in lines, not sentences, and a bullet is one line,
+    # matching spec/15 §5.4's width row. A blank line, not a single newline,
+    # because CC's markdown renders a lone newline inside a paragraph as a soft
+    # break (`breaks:!1`) and a GUI wrapper may show it as a space. Emoji are
+    # left to the model ("let Claude be Claude"). Evidence and the inventory of
+    # every form-steering layer: notes/2026-10-08-reply-form.md.
     # 2026-09-25, item 30 re-measured on win32 after living with the 09-21
     # sentence: the operator's verdict was "very verbose reporting again ...
     # tough to manage", with four sessions on screen closing in 200-400 words
@@ -1883,113 +1956,46 @@ def plan_adhocs(blob):
                     reason="no willow_tern section in this build — nothing to suppress")
     plan.append(item)
 
-    # ---- silent-turn-reminder-model-cut (2026-09-21, item 31, operator's decision)
+    # ---- silent-turn-reminder-off (2026-09-29, operator's rule)
     #
-    # [remark] The first adhoc that edits a GATE rather than prompt text. Since
-    # 2.1.270 the capability gate turns `silent_turn_reminder` on for any model
-    # carrying `fable_5_1_prompt_bundle`, before any server flag is read. Item
-    # 27 masked it with CLAUDE_CODE_SILENT_TURN_REMINDER=0, but the gate returns
-    # the env value as its answer for EVERY model, so the same line overrode the
-    # `osier_transept` client-data arm that assigns the reminder to Opus 5 SDK
-    # sessions, and the operator's ruling is to accept arms (item 19). Taking
-    # the capability out of the model clause removes the model default and
-    # nothing else: an arm still reaches the model it was assigned to. The env
-    # line is removed alongside, and `status` reports it as ENV OVERRIDE if it
-    # comes back.
+    # The reminder ("the user hasn't heard from you in a while", every 5 silent
+    # tool calls) is item 27's narration pressure in per-turn form, and the
+    # tranche removes it. Operator, 2026-09-29: a server arm is accepted only
+    # when it does not conflict with an established behavioural-outcome patch;
+    # this one does, so it is switched off for every route, arms included.
     #
-    # **Every model clause, not Fable's.** It was Fable-only until CC 2.1.280
-    # added a third clause — `opus_5_5_prompt_bundle`, arming
-    # `silent_turn_reminder` and `quizzical_shore` — which would have handed the
-    # reminder straight back on Opus 5.5 while the Fable cut still verified and
-    # every marker held. The operator's decision is about the reminder being a
-    # MODEL DEFAULT at all, so the cut follows the capability, not the model
-    # that happened to carry it first.
+    # History, because the route kept moving. Item 31 (2026-09-21) cut the
+    # capability out of the gate's model clauses and deliberately let server
+    # arms through, on a broader reading of the 2026-09-11 ruling. 2.1.280 added
+    # a second clause that armed it; 2.1.283 moved the clause into a local;
+    # 2.1.284 armed it from Sonnet 5.5's own catalogue entry AND from client
+    # data. Chasing each decider meant one locator per route and a green check
+    # whenever a new route arrived. The capability has ONE consumer, the
+    # predicate the attachment list calls:
     #
-    # Derived, not literal. The clauses are found through the gate's own
-    # prologue (GATE_PROLOGUE); a predicate qualifies when its body tests any
-    # `*_prompt_bundle`; and each set is the NEAREST `<v>=new Set([...])`
-    # before the gate, since a one-letter minified name is defined in many
-    # modules and the first match in the bundle is not safe. Member lists are
-    # rewritten minus one member, so a member upstream adds later survives. The
-    # same byte sequence also opens the catalogue's list of every capability
-    # name, which is why the anchor carries `<v>=new Set([` and not the members
-    # alone.
+    #   function oVt(e){let n=Ue(e);return w1("silent_turn_reminder",n,e,
+    #                                          a.CLAUDE_CODE_SILENT_TURN_REMINDER)}
     #
-    # The affected sets are patched as ONE span, because one plan item is one
-    # target id (build_ab asserts that). In every build so far they are one
-    # comma chain in a single `var` statement; the span is accepted only when it
-    # is nothing but `<v>=new Set([...])` links, so a build that separates them
-    # stops the apply instead of swallowing whatever landed in between.
-    #
-    # A gate with no model clause at all is MANUAL, not NOOP: the env line is
-    # gone, so a reshaped gate that still turns the reminder on by model must
-    # stop the apply rather than ship the nag back in silence.
-    item = {"name": "silent-turn-reminder-model-cut", "kind": "adhoc"}
-    found, opaque = {}, []
-    for m in GATE_PROLOGUE.finditer(blob):
-        cap = m.group(1)
-        clause = re.search(rb"if\((?:[^;{}]{0,200})\)return!0;", blob[m.end():m.end() + 400])
-        if not clause:
-            continue
-        for setvar, pred in re.findall(rb"([\w$]+)\.has\(" + re.escape(cap) + rb"\)&&([\w$]+)\(",
-                                       clause.group(0)):
-            base = max(0, m.start() - 4000)
-            defs = list(re.finditer(rb"(?<![\w$])" + re.escape(setvar) + rb"=new Set\(\[([^\]]*)\]\)",
-                                    blob[base:m.start()]))
-            if not defs:
-                continue
-            d = defs[-1]
-            members = re.findall(rb'"([a-z0-9_]+)"', d.group(1))
-            body = gate_predicate_body(blob, pred, m.start())
-            if body is None or not CAPABILITY_TEST.search(body):
-                # A clause we cannot read is not a clause we can promise to
-                # have cut. Only one that arms the reminder is fatal, and it is
-                # fatal rather than skipped: skipping is how CC 2.1.280 shipped
-                # a half-cut gate that every other check called OK.
-                if b"silent_turn_reminder" in members:
-                    opaque.append(pred.decode())
-                continue
-            found[base + d.start()] = (base + d.end(), d.group(0), members)
-    cut = {s: v for s, v in found.items() if b"silent_turn_reminder" in v[2]}
-    if opaque:
-        item.update(status="MANUAL",
-                    reason=f"a gate clause arming silent_turn_reminder has a predicate this tool "
-                           f"cannot resolve to a model capability ({', '.join(sorted(opaque))})",
-                    fix="read the gate by hand (AGENTS.md update step 1), add the clause to "
-                        "MODEL_GATE_CLAUSES and teach gate_predicate_body its shape. Until then "
-                        "keep CLAUDE_CODE_SILENT_TURN_REMINDER=0 in settings.json")
-    elif not found:
-        item.update(status="MANUAL",
-                    reason="no model clause resolved out of the capability gate",
-                    fix="the capability gate was reshaped; re-read it (AGENTS.md update step 1, "
-                        "ccctl model_gate_clauses) and re-derive the cut. Until then keep "
-                        "CLAUDE_CODE_SILENT_TURN_REMINDER=0 in settings.json so the reminder "
-                        "stays off")
-    elif not cut:
-        item.update(status="NOOP",
-                    reason="no model clause carries silent_turn_reminder")
+    # so `return!1&&` there switches it off whatever the env, the clauses, the
+    # catalogue or the server say. The clause and catalogue parsers stay as
+    # detectors (gate_drift, catalogue_drift); they no longer carry the mask.
+    item = {"name": "silent-turn-reminder-off", "kind": "adhoc"}
+    stock = list(re.finditer(REMINDER_PREDICATE, blob))
+    if len(stock) == 1:
+        old9 = stock[0].group(0)
+        item.update(status="AUTO", old=old9, new=b"return!1&&" + old9[len(b"return "):])
+    elif stock:
+        item.update(status="MANUAL", reason=f"reminder predicate matches {len(stock)}x — ambiguous",
+                    fix="inspect the unpacked JS; the capability has grown a second consumer")
+    elif re.search(REMINDER_PREDICATE_CUT, blob):
+        item.update(status="NOOP", reason="the reminder predicate is already switched off")
     else:
-        lo, hi = min(cut), max(e for e, _o, _mem in cut.values())
-        span = blob[lo:hi]
-        chain = rb"[\w$]+=new Set\(\[[^\]]*\]\)(?:,[\w$]+=new Set\(\[[^\]]*\]\))*"
-        if not re.fullmatch(chain, span):
-            item.update(status="MANUAL",
-                        reason=f"the {len(cut)} clause set(s) arming silent_turn_reminder are no "
-                               f"longer one comma chain ({len(span)} bytes between them)",
-                        fix="patch each set separately: split this adhoc into one plan item and "
-                            "one edits/targets.json entry per clause")
-        elif blob.count(span) != 1:
-            item.update(status="MANUAL",
-                        reason=f"the clause set literal occurs {blob.count(span)}x — ambiguous",
-                        fix="widen the anchor with the gate's own prologue before patching")
-        else:
-            def _drop(mm):
-                members = [x for x in re.findall(rb'"([a-z0-9_]+)"', mm.group(2))
-                           if x != b"silent_turn_reminder"]
-                return mm.group(1) + b"=new Set([" + b",".join(b'"' + x + b'"'
-                                                               for x in members) + b"])"
-            new7 = re.sub(rb"([\w$]+)=new Set\(\[([^\]]*)\]\)", _drop, span)
-            item.update(status="AUTO", old=span, new=new7)
+        item.update(status="MANUAL",
+                    reason="no `return <gate>(\"silent_turn_reminder\",…,"
+                           "….CLAUDE_CODE_SILENT_TURN_REMINDER)` predicate in this build",
+                    fix="find what now decides whether the silent_turn_reminder attachment is "
+                        "added (grep the attachment name) and re-derive the cut there. Until then "
+                        "set CLAUDE_CODE_SILENT_TURN_REMINDER=0 in settings.json env")
     plan.append(item)
 
     # ---- git-commit-authority (2026-09-24, TODO 38, C-02)
@@ -2159,6 +2165,12 @@ BASH_NOTE_TAIL = StockSentence(
 # replaces. 81 bytes, measured on stock 2.1.280 linux-x64.
 GIT_COMPACT = StockSentence(
     b"- Commit or push only", 81, "e756a970d2483f2b167c6e746845db6a29beed511eb05545e29b61a2c053d38e")
+# The Agent tool description's shared preamble sentence, the one
+# subagent-delegation-opt-in appends to. 68 bytes, measured on stock 2.1.294
+# linux-x64. In the bundle it follows an interpolated intro, `${x}. `.
+AGENT_PREAMBLE = StockSentence(
+    b"Each agent type has", 68, "c04a05f67a159e4ba0ac4dc12acde4d5c8eb706b3f1592ead2d8904dab1d0a4a")
+AGENT_PREAMBLE_LEAD = re.compile(rb"\$\{[\w$]+\}\. $")
 # ASCII only: adhoc_patch refuses high bytes, and the payload lands inside a
 # template literal, so no backtick and no "${".
 GIT_COMPACT_NEW = ("- Committing finished work is part of the task, and so is pushing it to the "
@@ -2401,6 +2413,22 @@ def download_binary(version, dest):
     dest.chmod(0o755)
     print(f"  verified sha256 + size, saved to {dest}")
     return dest
+
+
+def carried_map(version):
+    """The provenance line of a CARRIED-FORWARD prompt map for `version`, or
+    None. spec/45 'Carried-forward map': when upstream has no map for a
+    release, an earlier published map that measurably still describes every
+    fragment we edit may be seeded under the new version's name. A seeded
+    file is then preferred over the real one forever — the cache never
+    re-downloads and `load_snapshot` prefers the snapshot copy — so the seed
+    leaves this sidecar beside it, and `status` and `analyze` say so on every
+    run until the real map replaces both files."""
+    side = TWEAKCC_DIR / "prompt-data-cache" / f"prompts-{version}.carried"
+    try:
+        return side.read_text(encoding="utf-8").strip() or "carried (no provenance recorded)"
+    except OSError:
+        return None
 
 
 def prompt_data_status(version):
@@ -3304,6 +3332,10 @@ def analyze_core(cfg, target_ver):
     print(f"prompt data    : {pstat} for {target_ver}"
           + (" — tweakcc's data repo lags this CC version (usually hours)" if pstat == "lagging" else "")
           + (" — network unreachable, working from local caches only" if pstat == "unknown" else ""))
+    carried = carried_map(target_ver)
+    if carried:
+        print(f"  CARRIED FORWARD: {carried}. The stock-prompt diff below is against that "
+              f"map, not {target_ver}'s own; the edited fragments were measured identical.")
     build_state = tweakcc_build_state(cfg, target_ver)
     print(f"tweakcc build  : {build_state['line']}")
     if build_state["verdict"] not in QUIET_BUILD:
@@ -3865,17 +3897,14 @@ def cmd_status(args):
                       f"which turns {cap} on for EVERY model — it {MODEL_GATES[cap][1].lower()}. "
                       f"Set it to \"0\" or remove it.")
             elif verdict == "UNVERIFIED":
-                print(f"[ccctl] MODEL GATE UNVERIFIED: no Fable model clause found in CC {ver}, "
-                      f"so nothing can say whether {cap} is on by model — re-read the gate "
+                print(f"[ccctl] MODEL GATE UNVERIFIED: no {cap} predicate found in CC {ver}, "
+                      f"so nothing can say whether it is on — re-read what adds it "
                       f"(AGENTS.md update step 1)")
-            elif verdict == "ENV OVERRIDE":
-                print(f"[ccctl] MODEL GATE ENV OVERRIDE: {var} in settings.json masks {cap} for "
-                      f"every model, server arms included; this binary already masks Fable's "
-                      f"default — remove the line (TODO 31)")
             elif how == "binary":
-                print(f"[ccctl] MODEL GATE UNMASKED: {cap} is on by model on Fable 5.1, which "
-                      f"{MODEL_GATES[cap][1].lower()}, and this binary does not take it out "
-                      f"of the model clause — run ccctl.py apply (markers cannot see this)")
+                print(f"[ccctl] MODEL GATE UNMASKED: {cap} {MODEL_GATES[cap][1].lower()} "
+                      f"wherever a model clause, a catalogue entry or a server arm turns it on, "
+                      f"and this binary does not switch it off — run ccctl.py apply "
+                      f"(markers cannot see this)")
             else:
                 print(f"[ccctl] MODEL GATE UNMASKED: {cap} is on by model on Fable 5.1, which "
                       f"{MODEL_GATES[cap][1].lower()} — add \"{var}\": \"0\" to the env block of "
@@ -3890,6 +3919,10 @@ def cmd_status(args):
     print(f"repo commit    : {repo_commit(cfg)} ({len(repo_edits(cfg))} edit fragments)")
     print(f"tweakcc data   : {'available' if data else 'LAGGING ' + ver + ' (apply impossible right now)'}")
     print(f"last checked   : {checkpoint_line(cfg, ver)}")
+    carried = carried_map(ver)
+    if carried:
+        print(f"                 CARRIED FORWARD: {carried} — replace it when upstream "
+              f"publishes {ver} (spec/45 'Carried-forward map')")
     if armed:
         print(f"prompt arm     : STOCK by intent since {arm['when']} — {arm['note']}")
         print(f"                 Anthropic's defaults + tweakcc's patch set; "
@@ -3972,7 +4005,7 @@ def cmd_status(args):
     try:
         rows, intact = model_gates(binary=binary, version=ver)
         bad = [(c, v, verdict) for c, v, _w, verdict in rows
-               if verdict in ("UNMASKED", "FORCED ON", "ENV OVERRIDE", "UNVERIFIED")]
+               if verdict in ("UNMASKED", "FORCED ON", "UNVERIFIED")]
         need = [r for r in rows if r[3] != "n/a"]
         print(f"model gates    : {len(need) - len(bad)}/{len(need)} masked"
               + (f" — {len(bad)} NOT" if bad else "")
@@ -3982,21 +4015,17 @@ def cmd_status(args):
         for cap, var, what, verdict in rows:
             if verdict == "UNMASKED" and MODEL_GATES[cap][2] == "binary":
                 print(f"                 UNMASKED: {cap} — {what}")
-                print(f"                           this binary leaves it in Fable's model clause; "
+                print(f"                           this binary does not switch it off; "
                       f"ccctl.py apply")
             elif verdict == "UNMASKED":
                 print(f"                 UNMASKED: {cap} — {what}")
                 print(f"                           add \"{var}\": \"0\" to settings.json env")
             elif verdict == "UNVERIFIED":
-                print(f"                 UNVERIFIED: {cap} — no Fable model clause found in this "
-                      f"binary; re-read the gate")
+                print(f"                 UNVERIFIED: {cap} — no predicate for it found in this "
+                      f"binary; re-read what adds it")
             elif verdict == "masked by env":
-                print(f"                 {cap}: masked by the env line; `apply` moves the mask into "
-                      f"the binary, then remove {var} (TODO 31)")
-            elif verdict == "ENV OVERRIDE":
-                print(f"                 ENV OVERRIDE: {var} masks {cap} on every model, server "
-                      f"arms included; the binary masks Fable's")
-                print(f"                           default already — remove the line (TODO 31)")
+                print(f"                 {cap}: masked by the env line only; `apply` switches it off "
+                      f"in the binary, which also covers harnesses that skip user settings")
             elif verdict == "FORCED ON":
                 print(f"                 FORCED ON: {var} reads as TRUE, so {cap} is on for "
                       f"EVERY model — it {what.lower()}")
@@ -4017,9 +4046,14 @@ def cmd_status(args):
         cur = subagent_model_state(binary)
         line, moved = subagent_model_summary(cur, state.get("subagentModel"))
         print(f"subagent model : {'MOVED: ' if moved else ''}{line}")
-        print(f"                 reaches: {', '.join(SUBAGENT_PIN_REACHES)}")
-        print(f"                 ignored by: "
-              + "; ".join(f"{a} — {w}" for a, w in sorted(SUBAGENT_PIN_IGNORED.items())))
+        if cur["pin"] and cur["pin"] != "inherit":
+            print(f"                 reaches: {', '.join(SUBAGENT_PIN_REACHES)}")
+            print(f"                 ignored by: "
+                  + "; ".join(f"{a} — {w}" for a, w in sorted(SUBAGENT_PIN_IGNORED.items())))
+        else:
+            print(f"                 inherit the parent: {', '.join(SUBAGENT_PIN_REACHES)}")
+            print(f"                 own defaults: "
+                  + "; ".join(f"{a} — {w}" for a, w in sorted(SUBAGENT_PIN_IGNORED.items())))
     except Exception as exc:                               # noqa: BLE001
         print(f"subagent model : unreadable ({exc!r})")
     # What the last capture of the delivered prompt found, free to repeat but
@@ -4414,10 +4448,13 @@ def report_subagent_model(binary, state):
 # Several sections this tranche depends on are not decided by the binary. They
 # are decided by a GrowthBook flag the server assigns per account, which is how
 # Anthropic runs A/B tests — so the same patched binary can carry a fragment on
-# Monday and not on Tuesday, with nothing local changing. The operator's ruling
-# (2026-09-11): a server arm is ACCEPTED, never fought — interfering would
-# corrupt data collection that may well improve the product he uses. But he
-# wants to know it happened.
+# Monday and not on Tuesday, with nothing local changing. The operator's rule:
+# a server arm is ACCEPTED and surfaced — interfering would corrupt data
+# collection that may well improve the product he uses (2026-09-11) — but ONLY
+# when it does not conflict with an established behavioural-outcome patch
+# (2026-09-29, narrowing a reading that had been applied to everything). An
+# arm that displaces our text or turns on something the tranche removes is
+# masked with the narrowest override, like any other gate.
 #
 # CC caches the assignment locally in ~/.claude.json under
 # `cachedGrowthBookFeatures`, so this reads the server's current answer with no
@@ -4479,8 +4516,9 @@ SERVER_ARMS = {
     # Usage-limit grace reminders (2026-09-25 stock-conflict audit, item 30).
     # Both inject a bracketed per-turn reminder that asks for "up to 3 short
     # bullets" of remaining work — a closing-message shape
-    # of their own, beside the floor's. Server-armed only; surfaced, not
-    # overridden (2026-09-11 ruling). `lantern_wick_mode` is a string arm
+    # of their own, beside the floor's. Server-armed only and off on every
+    # machine so far; if one arms, judge it against the floor (spec/15) before
+    # accepting it, per the 2026-09-29 rule. `lantern_wick_mode` is a string arm
     # ("wrap-up" | "next-steps" | anything else = off), and its sibling
     # `tengu_lantern_wick_text` can replace the reminder's text outright.
     "tengu_lantern_wick_mode": (None, "usage-limit grace reminder: 'next-steps' asks for 'up to 3 "
@@ -4524,24 +4562,24 @@ SERVER_ARMS = {
 #
 #   "env"     the settings.json env line. The gate reads it first and returns
 #             it as the answer, so it masks EVERY model, a server arm included.
-#   "binary"  the adhoc `silent-turn-reminder-model-cut` takes the capability
-#             out of EVERY model clause that arms it — Fable's since 2.1.270
-#             and Opus 5.5's since 2.1.280. Only the model default goes: a
-#             server arm (GrowthBook or client data) still reaches the model it
-#             was assigned to, which is the 2026-09-11 ruling (item 31). The
-#             env var must then be ABSENT: "0" would mask the arms too, and
-#             that state reads `ENV OVERRIDE`.
+#   "binary"  the adhoc `silent-turn-reminder-off` cuts the capability's only
+#             consumer, so it is off on every model and harness whatever the
+#             env, the clauses, a catalogue entry or a server arm say. A
+#             server arm is accepted only when it does not conflict with an
+#             established behavioural-outcome patch (operator, 2026-09-29), and
+#             this one conflicts. The env var is then redundant, not harmful.
 #   None      left on.
 MODEL_GATES = {
     "turn_updates": (
         "CLAUDE_CODE_TURN_UPDATES",
         "REPLACES our communication fragment with the stock narrate-as-you-go line",
         "env"),
-    # Moved from "env" to "binary" on 2026-09-21: the env line also overrode
-    # the `osier_transept` client-data arm on Opus 5 SDK sessions. Measured
-    # with the scripted tool loop of `status --delivered`: with the env line
-    # out of play, the reminder lands before the 6th request on Fable (model
-    # default) and on Opus 5 `-p` (the arm).
+    # "env" until 2026-09-21, then a model-clause cut that let server arms
+    # through (item 31), then — once 2.1.284 armed it from Sonnet 5.5's
+    # catalogue entry and from client data — a cut at its one consumer that
+    # switches every route off (2026-09-29). `status --delivered`'s scripted
+    # tool loop is the proof: the reminder lands before the 6th request when
+    # anything turns it on.
     "silent_turn_reminder": (
         "CLAUDE_CODE_SILENT_TURN_REMINDER",
         "feeds a 'the user hasn't heard from you' reminder every 5 silent tool calls",
@@ -4570,11 +4608,49 @@ MODEL_GATES = {
         None,
         "hides hook notices in the transcript, no effect on the prompt",
         None),
+    # CC 2.1.293, Haiku 5.5's own catalogue entry: the heron_brook section's
+    # fallback text ("The reasoning effort setting changes how much you think
+    # before you act…"), behind `tengu_idempotent_wolf` (default on). It argues
+    # for finishing the request and asking only when the reading cannot be
+    # named, which the delivering-work fragment already says, so it is kept:
+    # `delegation-override-cut` removes heron_brook's server text and leaves
+    # this fallback in place (notes/2026-10-08-win32-2.1.294.md §2).
+    "haiku_5_5_early_stopping_guidance": (
+        None,
+        "Haiku 5.5 early-stopping guidance in the heron_brook slot — consonant, left ON",
+        None),
+    # CC 2.1.293: a per-turn "Elapsed time so far: Xm YYs" attachment on the
+    # main loop's tool turns. No model clause and no catalogue entry arms it,
+    # so only a server arm or client data can. A clock reading asks for
+    # nothing, so it is accepted when armed; it is listed so that an arm shows
+    # up as a delta in `flags` rather than as an unclassified key.
+    "elapsed_time_reminder": (
+        None,
+        "per-turn 'Elapsed time so far' note on tool turns (server-armed only) — left ON",
+        None),
 }
 
-# The capabilities the binary takes out of a model clause. `gate_drift` reads
-# the LIVE binary, where the patched clause is legitimately one short.
+# The capabilities switched off in the binary. Until 2026-09-29 the reminder was
+# cut out of the model clauses (and, for one day, out of Sonnet 5.5's catalogue
+# entry), so a binary patched by an older tranche legitimately has clauses one
+# member short; `gate_drift` and `catalogue_drift` keep accepting that shape.
 BINARY_MASKED = frozenset(c for c, (_v, _w, how) in MODEL_GATES.items() if how == "binary")
+
+# The reminder's single consumer, as `silent-turn-reminder-off` finds it, and
+# as it reads once cut. See that plan item for why the cut sits here.
+REMINDER_PREDICATE = (rb'return [\w$]+\("silent_turn_reminder",[\w$]+,[\w$]+,'
+                      rb'[\w$]+\.CLAUDE_CODE_SILENT_TURN_REMINDER\)\}')
+REMINDER_PREDICATE_CUT = rb"return!1&&" + REMINDER_PREDICATE[len(rb"return "):]
+
+
+def reminder_predicate_state(blob):
+    """'off' when the reminder's predicate is cut, 'stock' when it is present
+    and uncut, None when this build has no such predicate."""
+    if re.search(REMINDER_PREDICATE_CUT, blob):
+        return "off"
+    if re.search(REMINDER_PREDICATE, blob):
+        return "stock"
+    return None
 
 # The model clauses of the gate, as the binary spells them. Each is a
 # `new Set([...])` the gate consults BEFORE any server flag, keyed on a model
@@ -4582,6 +4658,9 @@ BINARY_MASKED = frozenset(c for c, (_v, _w, how) in MODEL_GATES.items() if how =
 #
 #   if (s===!0 || U.has(e)&&wle(n) || G.has(e)&&_4t(r)) return !0;
 #                 \__ fable clause __/  \__ opus 5 clause __/
+#
+# (2.1.283 computes the same disjunction into a local first; the shapes are
+# GATE_CLAUSE_SHAPES.)
 #
 # 2.1.270 had one clause and this was a single literal byte check. 2.1.278
 # added the second, and a single-literal check cannot see a second set arrive:
@@ -4610,11 +4689,73 @@ MODEL_GATE_CLAUSES = {
     # `silent_turn_reminder` — the capability item 31 cut out of Fable's clause
     # — so on this release the reminder is a model default again for any model
     # carrying `opus_5_5_prompt_bundle`, which `CLAUDE_CODE_SUBAGENT_MODEL=opus`
-    # now resolves to. `silent-turn-reminder-model-cut` takes it out of both.
+    # now resolves to. Since 2026-09-29 `silent-turn-reminder-off` makes the
+    # clauses moot for it; the parse stays as a detector.
     # `quizzical_shore` is not prompt text: it decides whether a hook notice
     # renders hidden or faint (`tengu_quizzical_shore`, `tengu_lilac_dune`).
     "opus_5_5_prompt_bundle": (("silent_turn_reminder", "quizzical_shore"), "2.1.280"),
 }
+
+# A fourth way to arm a gate capability, and one no clause parse can see: the
+# model's OWN catalogue entry. The gate's first rung, before any clause, is
+#
+#   Eh(model, cap, ctx) = CLAUDE_CODE_MODEL_CAPABILITIES
+#                       ?? (served lookup === true || baked entry lists cap ? true : undefined)
+#
+# and a defined answer is returned as the gate's answer. CC 2.1.284 shipped
+# Sonnet 5.5 with `silent_turn_reminder` in its baked `capabilities:[...]` —
+# no `*_prompt_bundle`, no clause — so the clause cut of the day still found and
+# cut its two sets, `analyze` read CLEAN, and the reminder was a model default
+# again on the new model. It is switched off at its consumer now
+# (`silent-turn-reminder-off`); this table is the detector for the next one.
+#
+# model id -> (the gate capabilities its baked entry lists, first CC version).
+# Same contract as MODEL_GATE_CLAUSES: an entry listing a gate capability this
+# table does not describe is drift.
+CATALOGUE_GATE_DEFAULTS = {
+    "claude-sonnet-5-5": (("silent_turn_reminder",), "2.1.284"),
+    "claude-haiku-5-5": (("haiku_5_5_early_stopping_guidance",), "2.1.293"),
+}
+
+# The capabilities the gate decides that matter here: every one the clauses
+# carry, every one MODEL_GATES tracks, and the two section switches that have
+# been model-keyed before (`lucky_cerf`, `amber_astrolabe`). Plain model
+# features (`effort`, `lean_prompt`, …) are not gate capabilities and never
+# count as drift.
+GATED_CAPABILITIES = (frozenset(MODEL_GATES)
+                      | frozenset(c for caps, _v in MODEL_GATE_CLAUSES.values() for c in caps)
+                      | {"lucky_cerf", "amber_astrolabe"})
+
+
+def catalogue_gate_defaults(blob):
+    """{model id: frozenset(gate capabilities its baked entry lists)}, only for
+    models that list at least one."""
+    out = {}
+    for mid, caps in catalogue_models(blob=blob).items():
+        hit = frozenset(caps) & GATED_CAPABILITIES
+        if hit:
+            out[mid] = hit
+    return out
+
+
+def catalogue_drift(found, version=None):
+    """Drift lines for catalogue-direct gate capabilities, as gate_drift gives
+    them for clauses. A patched entry (minus BINARY_MASKED) is not drift."""
+    drift = []
+    for mid, caps in sorted(found.items()):
+        entry = CATALOGUE_GATE_DEFAULTS.get(mid)
+        if entry is None:
+            drift.append(f"NEW catalogue default: {mid} lists {sorted(caps)} in its own entry "
+                         f"(armed before any clause)")
+        elif caps not in (frozenset(entry[0]), frozenset(entry[0]) - BINARY_MASKED):
+            drift.append(f"{mid} catalogue entry lists {sorted(caps)}, "
+                         f"table says {sorted(entry[0])}")
+    for mid, (caps, since) in CATALOGUE_GATE_DEFAULTS.items():
+        # absent is our own cut when nothing unmasked is left in the entry
+        if (mid not in found and frozenset(caps) - BINARY_MASKED
+                and version and ver_key(version) >= ver_key(since)):
+            drift.append(f"{mid} catalogue default is GONE (this table has it from CC {since})")
+    return drift
 
 
 def gate_set_literal(caps):
@@ -4638,6 +4779,43 @@ MODEL_GATE_CAPABILITY = "fable_5_1_prompt_bundle"
 # than grepping names a round note happened to record.
 GATE_PROLOGUE = re.compile(
     rb"function [A-Za-z_$][\w$]*\((\w+),(\w+),(\w+),(\w+)\)\{if\(\4!==void 0\)return \4;")
+
+# The model clause that follows the prologue, in each shape a build has used.
+# Up to 2.1.280 the clause returned true itself:
+#
+#   if(s===!0||G.has(e)&&wle(n)||H.has(e)&&_4t(r))return!0;
+#
+# 2.1.283 computes it into a local instead, because client data can now turn a
+# model default OFF (`tengu_model_capability_off_from_client_data`):
+#
+#   let p=G.has(e)&&yhe(n)||H.has(e)&&Rln(r)||z.has(e)&&m(n),u=E4n(r);
+#   if(p){if(u?.data?.[e]!==!1)return!0;...
+#
+# The sets and predicates did not move, so the cut still means what it meant: a
+# capability out of a set is a model default gone, and a client-data arm still
+# reaches its model. Only the statement around them changed, and the old
+# pattern then matched the inner `if(u?.data...)return!0;`, which names no set.
+# So a shape counts only when it carries a `<set>.has(<cap>)&&` pair.
+GATE_CLAUSE_SHAPES = (
+    rb"if\((?:[^;{}]{0,200})\)return!0;",
+    rb"let ([\w$]+)=[^;{}]{0,300};if\(\1\)\{if\([^;{}]{0,80}\)return!0;",
+)
+
+
+def gate_model_clause(blob, m):
+    """The model clause of the gate whose prologue matched at `m`, as bytes, or
+    None. The earliest match of any GATE_CLAUSE_SHAPES that tests the gate's
+    capability argument against a set."""
+    tail = blob[m.end():m.end() + 400]
+    pair = re.escape(m.group(1)) + rb"\)&&"
+    best = None
+    for shape in GATE_CLAUSE_SHAPES:
+        for c in re.finditer(shape, tail):
+            if re.search(rb"\.has\(" + pair, c.group(0)):
+                if best is None or c.start() < best.start():
+                    best = c
+                break
+    return None if best is None else best.group(0)
 
 
 # How far from the gate a name may be defined and still be the right one.
@@ -4701,13 +4879,11 @@ def model_gate_clauses(blob):
     out = {}
     for m in GATE_PROLOGUE.finditer(blob):
         cap = m.group(1)
-        # the model clause is the `if(<x>===!0||...)return!0;` that follows
-        tail = blob[m.end():m.end() + 400]
-        clause = re.search(rb"if\((?:[^;{}]{0,200})\)return!0;", tail)
-        if not clause:
+        clause = gate_model_clause(blob, m)
+        if clause is None:
             continue
         for setvar, pred in re.findall(
-                rb"([\w$]+)\.has\(" + re.escape(cap) + rb"\)&&([\w$]+)\(", clause.group(0)):
+                rb"([\w$]+)\.has\(" + re.escape(cap) + rb"\)&&([\w$]+)\(", clause):
             names = gate_near(blob, rb"(?<![\w$])" + re.escape(setvar) + rb"=new Set\(\[([^\]]*)\]\)",
                               m.start())
             caps = frozenset(re.findall(rb'"([a-z0-9_]+)"', names.group(1))) if names else frozenset()
@@ -4735,45 +4911,51 @@ def model_gates(env=None, binary=None, version=None, blob=None):
 
     verdict: 'masked', 'UNMASKED', 'FORCED ON', 'n/a', and for a "binary"
     capability also:
-      'masked by env'  the binary does not mask it (not applied yet, or no
-                       binary read) and the env line does: the interim state
-                       on a machine between `pull` and `apply`
-      'ENV OVERRIDE'   the binary masks it AND the env line is set: redundant
-                       for Fable, and it masks the server's arms too
-      'UNVERIFIED'     a binary was read and has no Fable clause to check
+      'masked by env'  the binary does not switch it off (not applied yet, or
+                       no binary read) and the env line does: the interim
+                       state on a machine between `pull` and `apply`
+      'UNVERIFIED'     a binary was read and has no reminder predicate to check
+    A "binary" capability that is switched off in the binary is 'masked'
+    whatever the env says: the cut sits before the env value is consulted.
     `set_intact` is None when no binary was given, else whether the model
     clauses in the binary are the ones MODEL_GATE_CLAUSES describes."""
     env = settings_env() if env is None else env
-    fable = None
+    catalogue = {}
     if blob is None and binary:
         try:
             blob = live_blob(binary)
         except (OSError, ValueError):                      # noqa: BLE001
             blob = None
     if blob is not None:
-        fable = model_gate_clauses(blob).get(MODEL_GATE_CAPABILITY)
+        catalogue = catalogue_gate_defaults(blob)
     rows = []
+    predicate = reminder_predicate_state(blob) if blob is not None else None
     for cap, (var, what, how) in MODEL_GATES.items():
         value = env.get(var) if var else None
         off = value is not None and str(value).strip().lower() in MODEL_GATE_OFF
         if how is None:
             verdict = "n/a"
+        elif how == "binary" and predicate == "off":
+            verdict = "masked"
         elif value is not None and not off:
             verdict = "FORCED ON"
         elif how == "env":
             verdict = "masked" if off else "UNMASKED"
         elif off:
-            verdict = "ENV OVERRIDE" if fable is not None and cap not in fable else "masked by env"
-        elif fable is None:
-            # no binary read: not checked. A binary read and no Fable clause
-            # in it: the gate moved, and nothing here can say what it does.
-            verdict = "unverified" if blob is None else "UNVERIFIED"
+            verdict = "masked by env"
+        elif blob is None:
+            verdict = "unverified"
+        elif predicate is None:
+            # a binary read and no predicate in it: the consumer moved, and
+            # nothing here can say what now decides the reminder
+            verdict = "UNVERIFIED"
         else:
-            verdict = "UNMASKED" if cap in fable else "masked"
+            # the uncut predicate: on wherever a clause, an entry or an arm says
+            verdict = "UNMASKED"
         rows.append((cap, var, what, verdict))
     intact = None
     if blob is not None:
-        intact = gate_drift(model_gate_clauses(blob), version) == []
+        intact = gate_drift(model_gate_clauses(blob), version, catalogue) == []
     return rows, intact
 
 
@@ -4790,15 +4972,19 @@ def model_gate_drift(binary, version=None):
     lacks a newer clause, and the dangerous direction is an unknown clause
     arriving, never a known one leaving."""
     try:
-        found = model_gate_clauses(live_blob(binary))
+        blob = live_blob(binary)
+        found = model_gate_clauses(blob)
+        catalogue = catalogue_gate_defaults(blob)
     except (OSError, ValueError) as exc:                   # noqa: BLE001
         return [f"gate unreadable ({exc!r})"]
-    return gate_drift(found, version)
+    return gate_drift(found, version, catalogue)
 
 
-def gate_drift(found, version=None):
-    """The drift lines for an already-parsed {model capability -> capabilities}.
-    Split out so the shapes can be tested without a 230 MB binary."""
+def gate_drift(found, version=None, catalogue=None):
+    """The drift lines for an already-parsed {model capability -> capabilities}
+    and, when given, {model id -> gate capabilities its own catalogue entry
+    lists} (catalogue_drift). Split out so the shapes can be tested without a
+    230 MB binary."""
     if not found:
         return ["no model clause found in the binary — the gate has been reshaped; "
                 "re-read it before trusting MODEL_GATES"]
@@ -4817,17 +5003,18 @@ def gate_drift(found, version=None):
     for model_cap, (_caps, since) in MODEL_GATE_CLAUSES.items():
         if model_cap not in found and version and ver_key(version) >= ver_key(since):
             drift.append(f"{model_cap} clause is GONE (this table has it from CC {since})")
+    if catalogue is not None:
+        drift.extend(catalogue_drift(catalogue, version))
     return drift
 
 
 def model_gates_unmasked(env=None, binary=None, blob=None):
     """The masks that are not in place — the one-line answer for the
     tripwire. 'FORCED ON' is the worst of them: the operator's own settings
-    turning the stock text on deliberately. 'ENV OVERRIDE' works but also
-    masks the server's arms, which the 2026-09-11 ruling says not to do."""
+    turning the stock text on deliberately."""
     rows, _ = model_gates(env, binary=binary, blob=blob)
     return [(cap, var, verdict) for cap, var, _what, verdict in rows
-            if verdict in ("UNMASKED", "FORCED ON", "ENV OVERRIDE", "UNVERIFIED")]
+            if verdict in ("UNMASKED", "FORCED ON", "UNVERIFIED")]
 
 
 # ------------------------------------------------- the live read-back
@@ -4921,22 +5108,35 @@ def live_routing_found(binary):
     return out
 
 
-def catalogue_models(binary):
-    """{model id: {capabilities}} out of the bundle's own model catalogue, so
-    "which models does this routing reach" is read rather than assumed."""
-    blob = live_blob(binary).decode("latin-1")
-    out = {}
-    for m in re.finditer(r'id:"(claude-[a-z0-9.\-]+)"', blob):
+def catalogue_capability_lists(blob):
+    """[(entry start, list start, list end, model id, [capability names])] for
+    every `id:"claude-…"` catalogue entry that carries a `capabilities:[...]`
+    list of its own, in bundle order. Bytes in, bytes out; offsets index `blob`.
+    The list span is the `capabilities:[...]` literal itself."""
+    out = []
+    for m in re.finditer(rb'id:"(claude-[a-z0-9.\-]+)"', blob):
         tail = blob[m.end():m.end() + 4000]
-        caps = re.search(r"capabilities:\[([^\]]*)\]", tail)
+        caps = re.search(rb"capabilities:\[([^\]]*)\]", tail)
         if not caps:
             continue
         # stop at the next entry so a capability-less model cannot borrow the
         # next model's list
-        nxt = re.search(r'id:"claude-', tail)
+        nxt = re.search(rb'id:"claude-', tail)
         if nxt and caps.start() > nxt.start():
             continue
-        out.setdefault(m.group(1), set()).update(re.findall(r'"([a-z0-9_]+)"', caps.group(1)))
+        out.append((m.start(), m.end() + caps.start(), m.end() + caps.end(),
+                    m.group(1).decode(), [c.decode() for c in
+                                          re.findall(rb'"([a-z0-9_]+)"', caps.group(1))]))
+    return out
+
+
+def catalogue_models(binary=None, blob=None):
+    """{model id: {capabilities}} out of the bundle's own model catalogue, so
+    "which models does this routing reach" is read rather than assumed."""
+    blob = live_blob(binary) if blob is None else blob
+    out = {}
+    for _e, _lo, _hi, mid, caps in catalogue_capability_lists(blob):
+        out.setdefault(mid, set()).update(caps)
     return out
 
 
@@ -4953,13 +5153,14 @@ def configured_models(settings=None):
     return out
 
 
-# Subagent model pin (operator decision 2026-09-22). He runs Opus-tier
-# subagents on purpose — Sonnet confabulates over the large input sweeps an
-# explorer takes in a complex project — so CLAUDE_CODE_SUBAGENT_MODEL is set to
-# the `opus` ALIAS rather than a pinned id, and FORCE is deliberately NOT set so
-# a caller can still name a model per spawn.
+# Subagent model pin. From 2026-09-22 the operator ran Opus-tier subagents via
+# CLAUDE_CODE_SUBAGENT_MODEL=opus (Sonnet had confabulated over large input
+# sweeps). On 2026-09-29, with Sonnet 5.5 out, he reset it to CC's defaults to
+# see how that plays out: no pin, so each agent follows its definition or the
+# parent, and the spawning model can still name a model per spawn. The checks
+# below stay for whenever a pin is set again; unpinned is not a fault.
 #
-# The alias is the whole reason this needs a per-upgrade check. `opus` is
+# When pinned, the alias is the reason this needs a per-upgrade check. `opus` is
 # resolved by the BUNDLE's own alias table, so a CC release can silently move
 # what the pin means; on 2.1.278 it is claude-opus-5. Nothing else in this repo
 # would notice, because no marker and no fragment is involved. `status` prints
@@ -5033,8 +5234,9 @@ def subagent_model_summary(cur, last):
     that is the case he asked to be asked about, and the case no other check in
     this repo can see."""
     if not cur["pin"]:
-        return (f"not pinned — a subagent with no model named inherits the parent "
-                f"(set {SUBAGENT_MODEL_VAR} in settings.json env)"), False
+        return ("not pinned (CC defaults, the operator's choice since 2026-09-29) — a "
+                "subagent with no model named follows its agent definition, else the parent; "
+                "the spawning model can still name one per spawn"), False
     if cur["pin"] == "inherit":
         return f"{SUBAGENT_MODEL_VAR}=inherit — subagents follow the parent model", False
     where = cur["resolved"] or "NOTHING IN THIS BUILD"
@@ -5745,6 +5947,12 @@ def delivered_verdicts(req, owners, snapshot=None):
             else:
                 rows.append((tid, "NOT IN SESSION", "no git section in this session's Bash tool"))
             continue
+        if tid == "subagent-delegation-opt-in":
+            has_agent = "Agent" in tools or "Task" in tools
+            rows.append((tid, "DISPLACED" if has_agent else "NOT IN SESSION",
+                         "the agent tool lacks the nested-delegation opt-in" if has_agent
+                         else "no agent tool in this session"))
+            continue
         if tid in ADHOC_STOCK_CLAUSES:
             stock, absent_why = ADHOC_STOCK_CLAUSES[tid]
             held = stock.in_text(everything) if isinstance(stock, StockSentence) else stock in everything
@@ -5792,16 +6000,38 @@ CLIENT_DATA_ROUTES = {
                             "turns the bypass/auto-mode shell block on", None),
     "tengu_heron_brook": (None, "server text for the heron_brook section, which "
                                 "delegation-override-cut removes", "delegation-override-cut"),
+    # Its only reader is the brook_heron section's body (read in the 2.1.294
+    # bundle: a string, or a per-model/per-effort map of strings, returned
+    # as the section), which the same cut replaces with `()=>null`. First
+    # served on macOS 2026-10-08, for Opus 5.5: "# Memory, notes and feedback".
+    "tengu_brook_heron": (None, "server text for the brook_heron section, which "
+                                "delegation-override-cut removes", "delegation-override-cut"),
     "tengu_toasty_thimble": ("CLAUDE_CODE_TOASTY_THIMBLE",
                              "the per-turn 'privately list what you need next' reminder "
                              "('' turns it off)", None),
     "tengu_willow_tern": ("CLAUDE_CODE_WILLOW_TERN",
                           "willow_tern writing style, which we cut", "willow-tern-writing-style-cut"),
+    # CC 2.1.293's "prompt ablation": every string in the list is deleted from
+    # the system prompt and tool descriptions before the request is sent. It
+    # can reach our text as easily as stock's, so an arm is judged by reading
+    # the list: if any entry occurs in edits/ or in our adhoc replacements, it
+    # conflicts and is masked with `CLAUDE_CODE_REMOVE_PROMPT_STRINGS=[]`.
+    "remove_prompt_strings": ("CLAUDE_CODE_REMOVE_PROMPT_STRINGS",
+                              "deletes the listed strings from the prompt — read the list "
+                              "against our text before accepting it", None),
 }
 # Verified not to touch the prompt: metadata, UI, output limits, retry policy.
 CLIENT_DATA_INERT = {"experimentKey", "atis", "cedar_lagoon", "cedar_basin", "heather_vale",
                      "tengu_luminous_whistle", "convolute_arcades", "quizzical_shore",
-                     "tengu_lapis_anchor"}
+                     "tengu_lapis_anchor",
+                     # 2.1.284, served for Sonnet 5.5: sends the effort level
+                     # per turn inside the conversation instead of only as the
+                     # top-level parameter (a prompt-cache detail, no text)
+                     "per_turn_effort",
+                     # 2.1.293: fires the silent-turn reminder after N silent
+                     # seconds instead of N turns; it sits behind the same
+                     # predicate `silent-turn-reminder-off` cuts
+                     "silent_turn_reminder_seconds"}
 
 
 def client_data_slots(config=None):
@@ -5847,6 +6077,17 @@ def client_data_rows(data):
     return rows
 
 
+def arm_conflicts(key):
+    """Whether a client-data arm `key` conflicts with an established patch:
+    it can displace one of our targets, or it turns on a capability the
+    tranche masks. Such an arm is masked, not accepted (2026-09-29)."""
+    route = CLIENT_DATA_ROUTES.get(key)
+    if route and route[2]:
+        return True
+    gate = MODEL_GATES.get(key)
+    return bool(gate and gate[2])
+
+
 def delivered_attribution(tid, data, env):
     """The client-data key that explains a displaced target, or None. An arm
     the env overrides cannot be the explanation."""
@@ -5864,9 +6105,8 @@ def delivered_summary(ver, state=None):
     rows = rec.get("results") or []
     failed = [r for r in rows if r.get("error")]
     bad = [f"{r['shape']}/{r['model']}" for r in rows
-           if any(v in ("DISPLACED", "MISSING", "PARTIAL", "UNMASKED")
-                  and t not in (r.get("arms") or {})
-                  for t, v in (r.get("verdicts") or {}).items())]
+           if any(v in ("DISPLACED", "MISSING", "PARTIAL", "UNMASKED", "ARM")
+                  for v in (r.get("verdicts") or {}).values())]
     if failed:
         detail = failed[0]["error"]
         head = (f"capture failed for {len(failed)}/{len(rows)} session shape(s), "
@@ -5880,7 +6120,7 @@ def delivered_summary(ver, state=None):
     if bad:
         head += f" — NOT: {', '.join(bad)}"
     if arms:
-        head += f"; accepted server arms: {', '.join(arms)}"
+        head += f"; displaced by server arms: {', '.join(arms)}"
     return head
 
 
@@ -5935,35 +6175,38 @@ def cmd_delivered(args):
             for tid, verdict, detail in delivered_verdicts(req, owners, snap):
                 why = delivered_attribution(tid, data, env) if verdict == "DISPLACED" else None
                 if why:
+                    # named, and still a finding: an arm that displaces our
+                    # text conflicts with an established patch (2026-09-29)
                     arms[tid] = why
-                    detail += f" — server arm {why}, accepted per the 2026-09-11 ruling"
-                elif verdict in ("DISPLACED", "MISSING", "PARTIAL"):
+                    detail += f" — by server arm {why}, which conflicts with our patch: mask it"
+                if verdict in ("DISPLACED", "MISSING", "PARTIAL"):
                     findings += 1
                 verdicts[tid] = verdict
                 print(f"    {verdict:14} {tid}: {detail}")
-            # The per-turn half, which no first request can show. The reminder
-            # is masked by model for Fable (item 31) and accepted wherever a
-            # server arm assigns it, so it is only a finding on a model whose
-            # default we mask, with no arm to explain it.
+            # The per-turn half, which no first request can show. The tranche
+            # switches the reminder off on every route, server arms included
+            # (2026-09-29), so any reminder is a finding; the note says what
+            # turned it on.
             injected = per_turn_injections(reqs)
             nag = next((n for n, t in injected if t.startswith(SILENT_REMINDER_OPENING)
                         or (reminder_text and t == reminder_text)), None)
-            by_model = MODEL_GATE_CAPABILITY in catalogue.get(mid, set())
+            reminder_models = {m for m, (c, _v) in MODEL_GATE_CLAUSES.items()
+                               if "silent_turn_reminder" in c} | {"silent_turn_reminder"}
+            by_model = bool(set(catalogue.get(mid, set())) & reminder_models)
             armed = data.get("silent_turn_reminder") is True
             if len(reqs) <= every:
                 note, verdict = (f"only {len(reqs)} request(s) came back, fewer than the "
                                  f"{every} silent turns the reminder needs — not measured"), "UNMEASURED"
             elif nag:
-                why = ("server arm silent_turn_reminder=true, accepted" if armed else
-                       "Fable's model default: the binary mask did not hold" if by_model else
+                why = ("turned on by server arm silent_turn_reminder=true" if armed else
+                       "turned on by the model's default" if by_model else
                        "no arm and no model default explains it")
-                note, verdict = f"fires before request {nag} — {why}", "ARM" if armed else "UNMASKED"
+                note, verdict = (f"fires before request {nag} — {why}, and this binary does not "
+                                 f"switch it off"), "UNMASKED"
             else:
                 note = f"none in {len(reqs) - 1} silent tool turns"
                 if armed:
-                    note += (" — although a server arm assigns it"
-                             + (": our env line overrides it (TODO 31)"
-                                if env.get("CLAUDE_CODE_SILENT_TURN_REMINDER") is not None else ""))
+                    note += " — although a server arm assigns it: switched off here"
                 verdict = "quiet"
             if verdict == "UNMASKED":
                 findings += 1
@@ -5998,15 +6241,14 @@ def cmd_delivered(args):
         print(f"CAPTURE INCOMPLETE: {capture_failures} session shape(s) sent no usable "
               "request; their delivered prompts and per-turn injections are unverified.")
     if findings:
-        print(f"FINDING: {findings} target(s) displaced, missing, stale or unmasked with no "
-              f"server arm to explain them. DISPLACED/MISSING: our bytes are in the binary and a "
-              f"branch is not reaching them. PARTIAL: the binary predates the repo's text — "
-              f"re-apply. UNMASKED: a per-turn injection we mask by model arrived anyway.")
+        print(f"FINDING: {findings} target(s) displaced, missing, stale or unmasked. "
+              f"DISPLACED/MISSING: our bytes are in the binary and a branch (or a named server "
+              f"arm) is not reaching them. PARTIAL: the binary predates the repo's text — "
+              f"re-apply. UNMASKED: a per-turn injection the tranche switches off arrived anyway.")
         sys.exit(2)
     if capture_failures:
         sys.exit(2)
-    print("OK: every target this session shape can carry arrived as our text"
-          + (" or under an accepted server arm." if any(r.get("arms") for r in results) else "."))
+    print("OK: every target this session shape can carry arrived as our text.")
 
 
 def cc_config_path():
@@ -6252,10 +6494,16 @@ def cmd_flags(args):
     # reads only `flags` would still not know it exists.
     binary, ver = claude_binary(), cc_version()
     rows, intact = model_gates(env, binary=binary, version=ver)
-    arms_by_cap = {}
+    arms = {}
     for model_cap, (caps, _since) in MODEL_GATE_CLAUSES.items():
         for cap in caps:
-            arms_by_cap[cap] = model_cap
+            arms.setdefault(cap, []).append(model_cap)
+    # a model's own catalogue entry arms before any clause (2.1.284 onwards)
+    for mid, (caps, since) in CATALOGUE_GATE_DEFAULTS.items():
+        if ver and ver_key(ver) >= ver_key(since):
+            for cap in caps:
+                arms.setdefault(cap, []).append(f"{mid} entry")
+    arms_by_cap = {cap: ", ".join(v) for cap, v in arms.items()}
     print()
     print(f"  {'model-keyed capability':25} {'armed by model':24} {'our mask':12} {'whose':6} gates")
     for cap, var, what, verdict in rows:
@@ -6266,9 +6514,7 @@ def cmd_flags(args):
             evs = "binary" if verdict == "masked" else verdict
         else:
             evs = "-" if var else "n/a"
-        print(f"  {cap:25} {arms_by_cap.get(cap, '(no clause)'):24} {evs:12} {ours:6} {what}"
-              + ("  <- ENV OVERRIDE: masks server arms too; remove the env line (TODO 31)"
-                 if verdict == "ENV OVERRIDE" else ""))
+        print(f"  {cap:25} {arms_by_cap.get(cap, '(no clause)'):24} {evs:12} {ours:6} {what}")
     # The sections that are OURS and arm by model rather than by flag: since
     # 2.1.278 `bison_cairn` and `larch_cistern` are capabilities, not
     # GrowthBook arms, so they do not appear in the table above this one.
@@ -6321,11 +6567,14 @@ def cmd_flags(args):
         print("      for the duration so the arm is theirs and the data stays clean:")
         for k in masked:
             print(f"        - {k} ({SERVER_ARMS[k][0]})")
+    # An env line that overrides an arm conflicting with our patches is doing
+    # its job (2026-09-29); only a consonant arm overridden is worth a line.
+    overridden = [o for o in overridden if not arm_conflicts(o[1])]
     if overridden:
-        # The client-data twin of BOTH, and the reason item 31 exists: an env
-        # line set for one model's default also decides another model's arm.
-        print("OVERRIDDEN: our env decides these client-data arms, which the 2026-09-11")
-        print("            ruling says to accept rather than fight:")
+        # The client-data twin of BOTH: an env line set for one model's
+        # default also decides another model's arm, which does not conflict.
+        print("OVERRIDDEN: our env decides these client-data arms, which do not conflict")
+        print("            with any patch and so are accepted rather than fought:")
         for where, k, var in overridden:
             print(f"        - {where}: {k} (by {var})")
     if drift:

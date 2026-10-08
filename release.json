@@ -1,25 +1,26 @@
 {
-  "_comment": "The compatibility checkpoint: which Claude Code release the edits were last checked against, the prompt map and tweakcc commit that check used, and the pristine binary hashes tools/build_ab.py accepts. Advancing it is a routine step, the 'After a prompt, locator or release change' runbook in spec/40, and not an approval gate. A dated observation, not a fleet poll; the per-machine state is TODO.md's machine table.",
-  "ccVersion": "2.1.280",
-  "observedAt": "2026-09-23",
+  "_comment": "The selected compatibility checkpoint: which Claude Code release the edits are reviewed against, the exact prompt map and tweakcc pin that review used, and the pristine binary hashes tools/build_ab.py accepts. A dated observation, not a fleet poll; the per-machine state is TODO.md's machine table.",
+  "ccVersion": "2.1.294",
+  "observedAt": "2026-10-08",
   "promptData": {
-    "path": "baseline/2.1.280/prompts.json",
-    "sha256": "b00e27cb24567f3801587eb80c0dfaa667af556d22fcdebeac94a45024a48da7",
-    "blob": "e6ceb4005fa53dd67ed6aeff944f163b3c74d7df",
+    "path": "baseline/2.1.292/prompts.json",
+    "sha256": "06f31cb557ac8e8b6b34d04128b8fa3ddc42c97d002a042f45da6c031de152eb",
+    "blob": "52847061fa2c1f3b991954110eab5ce59ded8b2a",
     "upstream": "Piebald-AI/tweakcc",
-    "commit": "b86c6685b942776549e5df98e499a1174807ff6f",
-    "reviewed": "Taken 2026-09-23 from tweakcc `main` — no trust gate needed this round: `prompts-2.1.280.json` had already merged as PR 1007 (`b86c6685`, 2026-09-23T14:08Z), so spec/45's pre-merge escape hatch did not apply. The cache entry tweakcc downloaded for itself round-trips to the published blob `e6ceb400`. The six fragments this repo edits are byte-identical to 2.1.278 in the map. Trust-gate criteria and the clone inventory: spec/45-pre-merge-tweakcc-data.md — amend it there, not here."
+    "commit": "5574fb4ca1b8e2289f4531ad1f03688e844ccf52",
+    "carriedForward": true,
+    "reviewed": "CARRIED FORWARD, 2026-10-08: tweakcc had no map and no PR for 2.1.293/2.1.294, so this is upstream's merged 2.1.292 map (main 5574fb4c, PR 1027), seeded on win32 as prompts-2.1.294.json with a `.carried` sidecar (spec/45 'Carried-forward map'). Admitted because every fragment this repo edits measured identical in 2.1.294: same pieces as 2.1.284, located unique, identifier-only gaps with unchanged counts, each piece once in the binary, spans byte-identical to 2.1.284 modulo minified names. Operator, 2026-10-08: 'If nothing is fishy, then let's work with what we've got'; a Fable 5.1 smell test found the bookkeeping issues this entry and spec/45 now carry. The map is NOT 2.1.294's: the stock-prompt diff in the analysis report is 2.1.284->2.1.292. Replace with upstream's real map when it publishes (TODO 42)."
   },
   "tweakcc": {
     "version": "4.3.3",
     "commit": "f5aaf1e7c78359c20ecbac9fbe5dcaf699d80cf4",
     "fetchRef": "pull/1005/head",
-    "overlay": "tools/tweakcc-overlays/4.3.3-cc-2.1.280.patch"
+    "overlay": "tools/tweakcc-overlays/4.3.3-cc-2.1.294.patch"
   },
   "stock": {
-    "linux-x64": "1e08503dbdf3c2cb0d706d32f3408277388d1c76ef108673e8fe42c1b322925b",
-    "win32-x64": "0e4195524b73eb77efbdf3e2b36de5322a29f0ca575dfd2d9b4f946b1d425469",
-    "darwin-arm64": "387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d"
+    "linux-x64": "27122ca7b624f537546fbef35b80c66370d974ff258f3d9b10ac50bb8771f262",
+    "win32-x64": "1f6471eb5a1c21a1f8b54a7827329d64433424dcce51717a54e837adb542163a",
+    "darwin-arm64": "def0d15e64dd7d89621f88d28214f885b1c38b0ddd69762fb8593e34915d6d53"
   },
-  "stockSource": "downloads.claude.ai/claude-code-releases/2.1.280/manifest.json (build 2026-09-21T20:55Z). darwin-arm64 is MEASURED: downloaded and re-hashed locally by ccctl.download_binary (size + SHA-256, 217254576 bytes) on macOS 2026-09-23. linux-x64 is MEASURED: downloaded and re-hashed locally by ccctl.download_binary, then re-hashed as the parked pristine (233709640 bytes) on Linux 2026-09-23. Both matched the manifest unchanged. win32-x64 is MEASURED: downloaded and re-hashed locally by ccctl.download_binary, then re-hashed as the installed pristine at versions/2.1.280 (237100192 bytes) on win32 2026-09-24; it matched the manifest unchanged, so all three entries are measured. Every entry must belong to THIS ccVersion: a hash from an earlier release is worse than no hash, because build_ab then blames the binary."
+  "stockSource": "downloads.claude.ai/claude-code-releases/2.1.294/manifest.json (build 2026-10-08T03:11Z). win32-x64 is MEASURED: downloaded and re-hashed locally by ccctl.download_binary on win32 2026-10-08 (256155808 bytes), matching the manifest. darwin-arm64 is MEASURED: downloaded by ccctl.download_binary on macOS 2026-10-08 and re-hashed after installation (236330608 bytes), matching the manifest. linux-x64 is MEASURED: downloaded by ccctl.download_binary on Linux 2026-10-08 and re-hashed after installation (252755128 bytes), matching the manifest. Every entry must belong to THIS ccVersion: a hash from an earlier release is worse than no hash, because build_ab then blames the binary."
 }

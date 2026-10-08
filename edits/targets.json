@@ -63,11 +63,21 @@
     "id": "delegation-override-cut",
     "kind": "adhoc",
     "title": "Delegation override removal",
-    "intent": "Remove the late delegation-suppression sections; other task/tool boundaries remain.",
+    "intent": "Remove the late blanket delegation-suppression sections so the parent may delegate; subagent-delegation-opt-in separately restores opt-in for nested delegation.",
     "source": "tools/ccctl.py",
     "implementation": "plan_adhocs",
     "spec": "spec/00-disposition-spec.md",
     "verification": "Unique stock structure and exact active-source replacement; see the generated source diff."
+  },
+  {
+    "id": "subagent-delegation-opt-in",
+    "kind": "adhoc",
+    "title": "Subagents require opt-in to delegate further",
+    "intent": "Restore the operator's opt-in boundary for subagents spawning further subagents, without restricting parent delegation. User, CLAUDE.md or skill must explicitly request further delegation; assignment alone is insufficient.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/00-disposition-spec.md",
+    "verification": "Unique shared Agent-description template preamble before compact/lean/full branches; ambiguous or missing anchors are MANUAL. Captured parent and child Agent tools carry the subagent-scoped boundary."
   },
   {
     "id": "bypass-auto-shell-block-invert",
@@ -120,14 +130,14 @@
     "verification": "Unique stock structure and exact active-source replacement; see the generated source diff."
   },
   {
-    "id": "silent-turn-reminder-model-cut",
+    "id": "silent-turn-reminder-off",
     "kind": "adhoc",
-    "title": "Silent-turn nag model default removal",
-    "intent": "Take silent_turn_reminder out of every model clause of the capability gate, so the model default goes and server arms still reach their model; replaces the settings env mask that overrode them. Fable's clause since CC 2.1.270, Opus 5.5's since 2.1.280.",
+    "title": "Silent-turn nag switched off",
+    "intent": "Switch the silent-turn reminder off at its one consumer, so no model clause, catalogue entry, env value or server arm can turn it back on. Replaces the model-clause and catalogue cuts, which let server arms through on a reading the operator narrowed on 2026-09-29: an arm is accepted only when it does not conflict with an established behavioural-outcome patch.",
     "source": "tools/ccctl.py",
     "implementation": "plan_adhocs",
     "spec": "spec/00-disposition-spec.md",
-    "verification": "Unique stock structure and exact active-source replacement; see the generated source diff. Behaviour: status --delivered's tool loop sees no reminder on any model whose only claim to it was the model clause."
+    "verification": "Unique stock structure and exact active-source replacement; see the generated source diff. Behaviour: status --delivered's tool loop sees no reminder on any model, including one the server arms."
   },
   {
     "id": "git-commit-authority",

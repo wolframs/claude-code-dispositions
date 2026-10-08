@@ -104,9 +104,11 @@ check("summary: an unresolvable pin says CC falls back rather than failing",
 
 _none, _none_moved = cc.subagent_model_summary(state({}), None)
 check("summary: no pin explains the default instead of reporting a fault",
-      _none_moved is False and "inherits the parent" in _none, _none)
-check("summary: no pin names the variable to set",
-      cc.SUBAGENT_MODEL_VAR in _none, _none)
+      _none_moved is False and "the parent" in _none and "per spawn" in _none, _none)
+# Since 2026-09-29 no pin is the operator's choice (CC defaults), so the line
+# must not read as an instruction to set one.
+check("summary: no pin does not tell anyone to set the variable",
+      cc.SUBAGENT_MODEL_VAR not in _none and "set " not in _none, _none)
 
 _inherit, _inherit_moved = cc.subagent_model_summary(
     state({"CLAUDE_CODE_SUBAGENT_MODEL": "inherit"}), None)

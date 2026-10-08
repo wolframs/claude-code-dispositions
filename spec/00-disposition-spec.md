@@ -543,10 +543,23 @@ operator a round trip. Read the patched binary's own behaviour as the instrument
 
 ## 8. Subagent inheritance
 
-Currently, my preferences live in `CLAUDE.md` and largely **evaporate at the
-subagent boundary** — `Explore`, `Plan`, `general-purpose` and the `/code-review`
-fleet run on their own prompts. Every complaint about subagent output verbosity
-is unfixable at the `CLAUDE.md` layer and fixable here.
+**Nested delegation requires opt-in (operator, 2026-09-28).** A parent may
+delegate normally. A subagent may spawn further subagents only when the user,
+CLAUDE.md or a skill explicitly asks it to delegate further; receiving an
+assignment alone is not permission. The shared Agent tool description owns
+this boundary, ahead of its compact/lean/full variants, so it also reaches
+custom agent prompts. `delegation-override-cut` still removes the blanket
+parent restriction; `subagent-delegation-opt-in` restores the scoped boundary.
+The deployed wording lives in `ccctl.SUBAGENT_DELEGATION_OPT_IN`. This is a
+prompt restriction, not a runtime denial. Evidence and rollout:
+[delegation audit](../notes/2026-09-28-delegation-audit.md).
+
+Subagents have their own system prompts; the parent's full disposition body
+does not automatically follow them. The 2026-09-28 general-purpose capture did
+carry global CLAUDE.md in its messages, so claiming that all such preferences
+evaporate at the boundary is too broad. Measure the instruction sources and
+tool descriptions delivered to the particular agent type before choosing the
+layer for a repair.
 
 `OPEN`: decide whether the disposition is inherited wholesale, or whether
 subagents get a reduced form (they report to me, not to [HUMAN], so the closing

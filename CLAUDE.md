@@ -75,7 +75,12 @@ called complete, and before the fragments are trusted on a new CC version:
    their kin), new server flags (`tengu_*`), client-data keys (per model and
    entrypoint, in `~/.claude.json`; `ccctl.py flags` lists them) and env
    overrides (`CLAUDE_CODE_*`) on the way to our bytes. A branch that returns
-   before our fragment is a silent revert.
+   before our fragment is a silent revert. **A new model is the usual
+   carrier**: read its catalogue entry's `capabilities:[...]` too, because the
+   gate honours a capability listed there before any clause, and no clause
+   parse sees it. 2.1.284 shipped Sonnet 5.5 with `silent_turn_reminder` in
+   its own entry while `analyze` read CLEAN
+   (notes/2026-09-29-win32-2.1.284.md).
 2. **Read the delivered prompt on every model the operator actually runs,
    under every harness they use** (the models in `~/.claude/settings.json`,
    not Haiku alone): `ccctl.py status --delivered` captures the exact first
@@ -85,6 +90,11 @@ called complete, and before the fragments are trusted on a new CC version:
    rewrites requests after CC is the one thing it cannot see; for that,
    `status --live` asks the model to quote the section back, one paid turn
    per model.
+   When a round changes our own text, also ask one fresh sibling on the
+   operator's main model to quote the changed section and answer yes/no on
+   the round's new and removed phrases (spec/40, "Sibling read-back"). It is
+   one paid turn, and it is the only way a resumed session, which replays the
+   prompt it started with, can see what new sessions now get.
 3. **Look for new per-turn injections** — reminder strings that are fed
    mid-turn (the "user hasn't heard from you", "privately list what you need
    next" family). They live outside the prompt map tweakcc extracts, so
@@ -151,11 +161,26 @@ If any of these finds a gate that bypasses our text, the fix is the
 narrowest override that restores the reviewed fragment (an env line, an
 adhoc), with the delivered prompt as the proof — and a TODO item for the other
 machines, since the gate is in the bundle, not the host. A server experiment
-arm (GrowthBook or client data) is not a gate to override: the operator's
-ruling of 2026-09-11 is to accept it and surface it (archived as TODO 19 in
-notes/archive/TODO-as-of-2026-09-22.md).
+arm (GrowthBook or client data) is accepted and surfaced **only when it does
+not conflict with an established behavioural-outcome patch**; one that
+displaces our text or turns on something the tranche removes is masked like
+any other gate. Operator, 2026-09-29, narrowing the 2026-09-11 ruling
+(archived as TODO 19 in notes/archive/TODO-as-of-2026-09-22.md), which had
+been read as covering every arm: "The ruling applies only for "features" or
+behaviors that are not in conflict with other established behavioral outcome
+patches" (notes/2026-09-29-win32-2.1.284.md §2).
 
 ## Keep the repository consolidated
+
+For SSH work on the Linux/Mac fleet, use `~/.local/bin/agent-run` rather than
+an interactive login shell; `doctor` reports runtime paths and locations,
+`exec --cwd PATH -- COMMAND...` accepts ordinary commands in any directory,
+and `request` takes literal argv/cwd/env as JSON on stdin. Runtime/package and
+configuration changes remain available under the task's authority. For this
+repo's same-version prompt deployment, `~/.local/bin/cc-deploy` exposes status,
+apply-reviewed-commit, verify, backups and rollback. Read
+`spec/50-agent-ssh.md`; release upgrades still follow spec/40. These helpers
+do not change SSH permissions or restart running Claude sessions.
 
 CLAUDE.md is a symlink to this file. Maintain this shared source; do not fork
 separate Claude and other-agent instructions.
@@ -208,3 +233,29 @@ separate Claude and other-agent instructions.
   tests), retire obsolete entrypoints, and ensure README/TODO/specs agree. Do
   not change remote publishing or commit/push scope merely because a
   documentation checklist mentions them.
+
+## Publishing (GitHub `[HANDLE]/claude-code-dispositions`, public since 2026-09-27)
+
+GitHub holds a filtered copy, never this repository's history: `baseline/`,
+`ab/`, `corpus/`, `notes/` and `TODO.md` stay here, and so do all machine
+details. Do not add a GitHub remote to this checkout. The copy is made by the
+public-mirror tool (Forgejo `[HUMAN]/public-mirror`,
+`manifests/claude-code-dispositions.yaml`; the public README and
+`ABOUT-THIS-REPOSITORY.md` are overrides under
+`overrides/claude-code-dispositions/`):
+
+1. Commit here first; the mirror reads commits, not the working tree. The
+   vendor-text trim lives on `site-prep-2`; merge `master` into it (or redo the
+   trim) before mirroring, and mirror from that branch.
+2. New files are denied until the manifest classifies them; the dry run lists
+   them as "unclassified". Classify each with a reason. Commits that mention
+   how machines are reached (ssh, hosts, ports) need a look before they ship.
+3. `bin/mirror --manifest manifests/claude-code-dispositions.yaml --source
+   <clone at site-prep-2> --stage <tmp> --dry-run --history <public clone>`
+   until the gate passes.
+4. Same command with `--publish <public clone>` (no `--orphan`) while the
+   public clone has branch `github-main` checked out, then push that branch to
+   GitHub `main`. Set `history_reviewed` in the manifest to the new tip.
+
+The public README is written for strangers and lives in the override, not
+here; update it there when the story changes.

@@ -34,6 +34,21 @@ trees (`6a2fac35`), same published blob (`68eab8bd`), and the seeded cache
 entry's `git hash-object` round-trips to it, so Windows' CRLF conversion stayed
 out of the file. All three machines have now built from this pin (macOS 2026-09-22).
 
+**CC 2.1.294 (2026-10-08) runs on a carried-forward map** (below): tweakcc
+`main`'s 2.1.292 map, because no map or PR for 2.1.293/2.1.294 existed. Its
+overlay, `4.3.3-cc-2.1.294.patch`, is the .284 overlay plus one locator:
+2.1.293 gave the CLAUDE.md reader a fifth parameter (a read hook), which the
+`agentsMd` patch did not match (`notes/2026-10-08-win32-2.1.294.md` §4).
+
+**CC 2.1.284 (2026-09-29) used this procedure for its prompt data only.** PR
+1016 (`190065c4`, head repository `Piebald-AI/tweakcc`, MEMBER, one unsigned
+commit on `main`'s `871ed33e`, one added file, blob `a9a5ca72`) passed the gate
+and seeded the cache; `release.json` records it. **The source pin did not
+move:** the local build never reads prompt data from its checkout, so a
+data-only PR needs the cache entry and nothing else. When PR 1016 merges,
+compare `main`'s published `prompts-2.1.284.json` against blob `a9a5ca72`; a
+different blob means the cache entry is replaced and `analyze` re-run.
+
 The overlay (`4.3.3-cc-2.1.278.patch`) covers CC 2.1.278 and is **identical in
 content to the 2.1.273 one**, which was identical to 2.1.270's: the patched
 code structures have not moved across those five releases, only minified names.
@@ -65,9 +80,58 @@ Use this procedure when all of the following are true:
 3. an open PR in `Piebald-AI/tweakcc`, authored by a Piebald team member,
    adds the missing prompt data.
 
-Otherwise wait for upstream. In particular, a PR from an unknown fork is not
-made trustworthy merely by having the expected filename or a large generated
-diff.
+Otherwise wait for upstream, or, when no maintainer PR exists either, use the
+carried-forward map below. A PR from an unknown fork is not made trustworthy
+merely by having the expected filename or a large generated diff.
+
+## Carried-forward map (first used 2026-10-08, CC 2.1.294)
+
+When tweakcc has neither a merged map nor a maintainer PR for a release, the
+newest map on `main` may be seeded under the new version's name **if it
+measurably still describes every fragment this repo edits**. It is the newest
+upstream file, not a reconstruction: tweakcc's public `tools/promptExtractor.js`
+does not reproduce upstream's maps (229 of 820 entries matched on 2.1.284),
+because upstream builds them with tooling it has not published, so "build our
+own" is not a route.
+
+Preconditions, each measured against the checksum-verified pristine of the
+target, with the results in the round note:
+
+1. every edited fragment's `pieces` equal the last reviewed map's;
+2. `plan_fragments` with the carried map locates each one AUTO and unique;
+3. every interpolation gap is a bare identifier, with the count unchanged;
+4. every piece occurs once in the binary (no second emission site);
+5. each located span equals the previous release's span after the
+   `${identifier}` gaps are normalised;
+6. the stock captures (`status --delivered`) carry our text on every
+   configured model after the update.
+
+Provenance and the trap. The cache never re-downloads a file it holds
+(`prompt_data_status`, and tweakcc's own `downloadStringsFile`), and
+`load_snapshot` prefers `~/ccctl/snapshots/prompts-<ver>.json`, which `update`
+writes from the cache. A seeded file would therefore stand in for the real map
+forever. So the seed is always three files:
+
+- `~/.tweakcc/prompt-data-cache/prompts-<ver>.json`: the carried map, byte
+  for byte the upstream file (check `git hash-object` against the blob);
+- `~/.tweakcc/prompt-data-cache/prompts-<ver>.carried`: one line of
+  provenance, which `status` and `analyze` print on every run (`carried_map`);
+- and in the repo, `baseline/<carried-ver>/prompts.json` under its **true**
+  version, with `release.json` `promptData.carriedForward: true` and the
+  `reviewed` text saying why.
+
+The analysis report's stock-prompt diff is then against the carried map, not
+the target's own; `analyze` says so. REVIEW for our fragments is still
+meaningful, because precondition 5 is the comparison REVIEW would make.
+
+**Replacing it**, on every machine that seeded, when upstream publishes the
+real map: delete the cache file, its `.carried` sidecar and
+`~/ccctl/snapshots/prompts-<ver>.json`; run `ccctl.py snapshot <ver>`; compare
+our fragments' entries with the carried ones and `edits/reviews.json`'s hashes;
+`analyze <ver>` must read CLEAN; add `baseline/<ver>/prompts.json`, re-point
+`release.json`, regenerate `ab/data.json` and run `tools/check_repo.py`. If our
+entries differ, re-run `apply` and `status --delivered`. The TODO item that
+carries this names the files per machine.
 
 ## Trust gate: inspect, then pin
 
@@ -77,7 +141,8 @@ Before running any code from the PR, verify on GitHub that:
 - the author's association is `MEMBER` or `OWNER`;
 - the changed files are limited to the expected generated prompt-data file
   (or every additional change has been understood separately);
-- the JSON is for the exact Claude Code version requested; and
+- the JSON is for the exact Claude Code version requested (the one
+  exception is a carried-forward map, below, which is labelled as such); and
 - the checkout is pinned to the PR's exact commit SHA, not merely its mutable
   branch name.
 
@@ -270,9 +335,12 @@ prompt cache on the machine that needs the early update.
 
 | Machine | Endpoint | Clone path | State, each row verified on its own date |
 | --- | --- | --- | --- |
-| Win11 work laptop | local | `[WINDOWS_HOME]\repos\tweakcc` | **2026-09-21:** detached at PR 1005 head `f5aaf1e7c78359c20ecbac9fbe5dcaf699d80cf4` (fetched via `pull/1005/head`), tracked source clean, `dist/` rebuilt with the 2.1.278 overlay (lint, 543 passed, 5 skipped, `patch_tweakcc.py` adaptation ✓); npm's global `tweakcc` package is still a junction to this clone. 0 failures on the CC 2.1.278 pristine, banner present after the swap. Was main `2a4ac735` (PR 998, 2026-09-16, CC 2.1.273). Do not mistake this repo's `.work/tweakcc-dev` for it — that is a sandbox artifact owned by another Windows SID. |
-| Kubuntu 26.04 workstation | remote | `[USER_HOME]/apps/tweakcc` (`~/apps/tweakcc`) | **2026-09-20:** detached at PR 1005 head `f5aaf1e7c78359c20ecbac9fbe5dcaf699d80cf4` (fetched via `pull/1005/head`), tracked source clean, `dist/` rebuilt with the 2.1.278 overlay (Node 24.16, pnpm 10.33, lint + tests + build); npm's global `tweakcc` is a symlink to this clone's `dist/index.mjs`. Was PR 995 head `0860c14` (2026-09-13), PR 993 head `f760b88`, `main` at `4d78df3` before that. |
-| macOS 26 MacBook Air | remote | `[USER_HOME]/apps/tweakcc` (`~/apps/tweakcc`) | **2026-09-22:** detached at PR 1005 head `f5aaf1e7c78359c20ecbac9fbe5dcaf699d80cf4` (fetched via `pull/1005/head`), tracked source clean, `dist/` rebuilt with the 2.1.278 overlay (Node 22.23, lint, 543 passed, 5 skipped, `patch_tweakcc.py` adaptation ✓); npm's global `tweakcc` symlinks into this clone. Was PR 995 head `0860c14` (2026-09-13), `f760b88` before that. |
+| Win11 work laptop | local | `[WINDOWS_HOME]\repos\tweakcc` | **2026-10-08:** reviewed pin unchanged at `f5aaf1e`; rebuilt with the .294 overlay (one new `agentsMd` locator), tracked source clean; the 2.1.294 patch set applied with the same per-patch results as 2.1.284. Evidence: `notes/2026-10-08-win32-2.1.294.md`. |
+| Kubuntu 26.04 workstation | remote | `[USER_HOME]/apps/tweakcc` (`~/apps/tweakcc`) | **2026-10-08:** reviewed pin unchanged at `f5aaf1e`; rebuilt with the .294 overlay, tracked source clean; the 2.1.294 patch set applied with the same per-patch results as 2.1.284, `✓ AGENTS.md` included. Evidence: `notes/2026-10-08-linux-2.1.294.md`. |
+| macOS 26 MacBook Air | remote | `[USER_HOME]/apps/tweakcc` (`~/apps/tweakcc`) | **2026-10-08:** reviewed pin unchanged at `f5aaf1e`; rebuilt with the .294 overlay, tracked source clean; the 2.1.294 patch set applied with the same per-patch results as 2.1.283, `✓ AGENTS.md` included. Evidence: `notes/2026-10-08-macos-2.1.294.md`. |
+
+On Windows, `.work/tweakcc-dev` is a sandbox artifact owned by another SID,
+not the deployment clone listed above.
 
 A future agent should
 inspect the existing clone and its origin before changing branches; do not

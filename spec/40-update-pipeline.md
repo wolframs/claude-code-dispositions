@@ -142,6 +142,37 @@ matching its launcher semantics:
   *becomes* `versions/<ver>` and the pristine one is parked alongside as
   `versions/<ver>.stock` (pristine_source knows to look there).
 
+### Existing sessions and the background daemon
+
+Atomic placement preserves existing executable mappings; it does not prevent
+CC's own services from reacting to the new launcher. On the Mac's 2026-09-28
+upgrade the daemon detected the .280 to .283 target change and self-restarted,
+replacing spare helpers while adopting its existing worker without respawning
+it (`notes/2026-09-28-macos-2.1.283.md`). The updater sent no signals, but that
+is not proof of zero process effects.
+
+**A resumed session keeps its old prompt** (measured 2026-10-08, CC 2.1.294,
+`notes/2026-10-08-win32-2.1.294.md` §6). CC stores the system prompt and tool
+descriptions of a session's first request as a `prompt_snapshot` attachment in
+the transcript, and on resume replays that snapshot instead of rendering the
+prompt from the binary (`UJe`: on unless `CLAUDE_CODE_SIMPLE`, or the host
+passes `systemPromptSnapshot:false`). Only a later `prompt_render_point`
+supersedes it, and the one cause in the 2.1.294 bundle is a model switch that
+changes the system prompt. Instruction files (CLAUDE.md) are re-read on resume;
+the prompt is not. So "start a fresh session to use it" means a new session:
+`--resume`, `--continue` and a restarted resumed tab still run the prompt they
+started with, on any binary. `status --delivered` captures fresh sessions only.
+
+Before a session-preserving upgrade, record PID, parent PID, start time and
+process role, including any `claude daemon`. After activation compare those
+identities and inspect `~/.claude/daemon.log` for upgrade handover and worker
+adoption/death, alongside prompt/signature checks. Distinguish preserved work
+from service restarts in the report. A strict requirement that *no process*
+change is incompatible with activating a new launcher while a watching daemon
+is running; stage and verify first and resolve the activation constraint rather
+than promising atomic replacement alone satisfies it. Do not kill or disable
+the daemon just to make the process comparison appear clean.
+
 ## macOS signing (VERIFIED on real hardware 2026-08-21)
 
 Exercised end-to-end on an M2 MacBook Air, macOS 26.5.2, CC 2.1.232: clean
@@ -237,13 +268,22 @@ parked in a 16 KiB-aligned word inside the writable `PT_LOAD`, a placeholder
 page Bun's own `--compile` sets up and then repoints. tweakcc replays that
 trick.
 
-**`repackELFSection` relocates; `repackMachO` and `repackPE` do not.** On linux
-every write — `--apply` and each `adhoc-patch` alike — appends a fresh copy of
+**Legacy repacker behavior: `repackELFSection` relocates; `repackMachO` and
+`repackPE` do not.** On the old Linux repacker path every write — `--apply` and each `adhoc-patch` alike — appends a fresh copy of
 the bundle past the end of the writable `PT_LOAD`, repoints both the section
 header and `BUN_COMPILED`, extends the segment, and **abandons the previous
 copy in the file**. Nothing ever truncates. Measured on 2.1.241: +253 MB per
 invocation, 343 MB → 596 MB → 850 MB on two sequential patches; a full update
 (1 `--apply` + 8 span patches) lands at 2.6 GB with 10 copies, 1 live.
+
+Current code-split builds take `bun_source_patch` before the legacy adhoc
+fallback. It edits the owning module within the bundle window, updates tables
+and invalidates stale bytecode without appending a new ELF bundle per target.
+The Linux 2.1.283 full patched build measured 214244536 bytes; the old bloat
+finding no longer describes this path. Regression coverage is in
+`tools/tests/test_ccctl_hardening.py`; measurements are in
+`notes/2026-09-28-linux-2.1.283.md`. The live-window rule below still matters
+for any file containing old copies.
 
 Consequences the pipeline now encodes:
 
@@ -282,6 +322,11 @@ pipeline itself never needs `claude update` — it downloads directly.)
 
 ## Runbook
 
+For agent work over SSH, [spec/50](50-agent-ssh.md) provides noninteractive
+execution and a same-version deployment wrapper with locking, backups and
+automatic binary recovery after failed verification. Release updates still
+follow this runbook.
+
 Per machine, once: copy `tools/ccctl.py` somewhere, `ccctl.py init <git-url>`
 (sparse clone), optionally edit `ccctl.json` (see the config table above).
 All three machines use `~/ccctl/` as the workspace.
@@ -299,14 +344,33 @@ Then the two durability guards (spec/30), which the pipeline assumes:
   the ccctl clone (`~/ccctl/repo`), which `ccctl.py pull` keeps current, not
   at a working clone that can move. `status` prints a `tripwire` line that
   says whether the paths the hook names still exist (spec/30).
-- `~/.claude/settings.json` → `env`: `CLAUDE_CODE_SUBAGENT_MODEL: "opus"`, and
-  **not** `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` — the operator's standing choice
-  of Opus-tier subagents, with the per-spawn override left open. `status`
-  prints a `subagent model` line and `update` asks whenever the alias moves;
-  see "The subagent model pin" below for why that question exists. Set on all
-  three machines as of 2026-09-24 (the rollout was TODO 33, archived in
-  `notes/archive/TODO-closed-2026-09-24.md`); do not assume a machine still
-  has it, read `status`.
+- **No** `CLAUDE_CODE_SUBAGENT_MODEL` and no `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`
+  in `~/.claude/settings.json` → `env`: since 2026-09-29 the operator runs CC's
+  default subagent models, to see how Sonnet 5.5 plays out (it replaced the
+  2026-09-22 Opus pin, below). `status` prints a `subagent model` line either
+  way; do not assume a machine has dropped the pin, read `status`.
+
+**Sibling read-back, after any change to our text** (operator, 2026-10-08:
+"You can also query a sibling opus `claude -p` process to ask them about
+details, they needn't re-derive the whole complexity, just confirm some
+questions you ask them"). `status --delivered` proves the bytes of a fresh
+session's first request; this asks a fresh session what it actually reads.
+One turn, on the operator's main model, from the repo:
+
+```
+claude -p --model opus "Read-only check, no tools needed. 1) Quote verbatim, in full,
+the section of your system prompt headed '<section>'. 2) Answer yes/no for each: does
+your system prompt contain the exact phrases (a) '<new phrase>', … (z) '<removed
+phrase>'? 3) Does your user CLAUDE.md context contain '<new block>'? Answer compactly."
+```
+
+List the round's new phrases and at least one it removed: a "no" on the
+removed one is the half that proves the old text is gone. Paste the yes/no
+lines into the round note. It needs no ccctl support and stays a procedure:
+the questions change every round, which is what `status --live`'s fixed
+first-sentence probes cannot follow. The agent that ran the update cannot do
+this by reading its own prompt if it was resumed (see "Existing sessions"),
+and a fresh sibling is cheaper than asking the operator to restart.
 
 Routine update:
 
@@ -376,6 +440,35 @@ above prove a machine, not the repo.
    or a failing test.
 
 Then `apply`/`update` on the machine being claimed, and only that machine.
+
+### Bundled copies of Claude Code
+
+`ccctl` patches one binary per machine, the one `~/.local/bin/claude` names.
+Several hosts ship their own stock copy instead and launch it unless told
+otherwise, and a session started that way carries none of our text. Operator,
+2026-10-08: "why not patch *all* the things". The policy is to **redirect,
+not patch**: every host that can be pointed at an executable is pointed at
+the installed binary, so one `update` covers them all. Patching each bundled
+copy is not an option, because our locators are derived per CC release and
+those copies lag by dozens of releases.
+
+| host | its bundled copy | how it is redirected |
+| --- | --- | --- |
+| Python Agent SDK | `claude_agent_sdk/_bundled/claude`, tried **before** PATH | `ClaudeAgentOptions(cli_path=…)` in the calling code |
+| TypeScript Agent SDK | `cli.js` or `claude-agent-sdk-<platform>/claude` | `pathToClaudeCodeExecutable` in the calling code |
+| VS Code extension | `resources/native-binary/claude` | `claudeCode.claudeProcessWrapper` = `~/ccctl/repo/tools/claude-process-wrapper.sh` (the host calls `wrapper <bundled> args…`; the wrapper drops the bundled path) |
+| T3 Code | none; it runs `claude` from PATH, and its server's PATH can lack `~/.local/bin` | `providers.claudeAgent.binaryPath` in `~/.t3/userdata/settings.json` |
+| Claude desktop app, VS Code's own agent host | app-managed downloads | no supported override; not redirected |
+
+Neither SDK has an environment variable for this, so the redirect lives in
+each project's code, with the bundled copy as the fallback when the path is
+missing. Which project does what, per machine, is in that machine's round
+note (macOS: `notes/2026-10-08-macos-2.1.294.md`; Linux:
+`notes/2026-10-08-linux-2.1.294.md`).
+
+To find a host that slipped through: every session writes its CC `version`
+and `entrypoint` into its first transcript lines under `~/.claude/projects/`.
+A version other than the installed one is a bundled copy at work.
 
 ## tweakcc's own patch set, and the in-CC indicator
 
@@ -585,13 +678,20 @@ is the normal form, not `update`.
 
 ## The subagent model pin, and why an upgrade has to ask about it (2026-09-22)
 
-**The operator's standing choice:** Opus-tier subagents for everything, set as
+**Current state (2026-09-29): no pin.** With Sonnet 5.5 out, the operator reset
+subagent models to CC's defaults "so I can see how that plays out". Unpinned,
+an agent follows its definition's model, else the parent (so under an Opus
+parent, `general-purpose` still runs Opus unless the spawning model names
+another per spawn), and `update` has no alias to ask about. The rest of this
+section is the pin's rationale and mechanics, kept for when one is set again.
+
+**The choice from 2026-09-22 to 2026-09-29:** Opus-tier subagents for everything, set as
 `CLAUDE_CODE_SUBAGENT_MODEL=opus` in `settings.json` env, with
-`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` deliberately **not** set. His reason is
-about accuracy, not cost: Sonnet confabulates over the large input sweeps an
-explorer takes in a complex project, so a cheaper default buys tokens with
-wrong answers. Leaving FORCE off keeps the per-spawn override available, so a
-caller can still name a model for one agent without unpinning anything.
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` deliberately **not** set. His reason was
+about accuracy, not cost: Sonnet confabulated over the large input sweeps an
+explorer takes in a complex project, so a cheaper default bought tokens with
+wrong answers. Leaving FORCE off kept the per-spawn override available, so a
+caller could still name a model for one agent without unpinning anything.
 
 CC resolves a spawned subagent's model in a fixed order, and names the rungs
 itself in its own telemetry: **per-spawn (`tool`) → the agent definition
@@ -691,9 +791,15 @@ excision). Accepted residuals:
   a CC session's own updater, are unguarded. Mitigation: `DISABLE_UPDATES=1`
   in settings env kills the session-side updater; ccctl runs are operator- or
   agent-driven, one at a time in practice.
-- **Rollback artifacts are kept, not pruned.** `*.pre-swap` (win32 launcher
-  dir), `versions/<ver>.stock` and `.pre-swap` (POSIX) accumulate one file
-  per version — deliberate: they ARE the rollback path. Prune by hand.
+- **Rollback artifacts accumulate, and the agent prunes them.** `*.pre-swap*`
+  (win32 launcher dir), `versions/<ver>.stock` and `.pre-swap` (POSIX) gain a
+  file per swap. After a round is verified (`status --check` and `status
+  --delivered`), the agent that ran it deletes every parked patched binary
+  that is superseded and can be rebuilt from a pristine plus a repo commit. It
+  keeps the pristines and any file a running process still maps (win32 refuses
+  the delete anyway). It records each kept file's reason and deletion
+  condition in the round note. Operator, 2026-09-29: backups are not left for
+  him to delete (global CLAUDE.md).
 - **Windows dual versions-dir layout** (`~/.local/share` vs `%LOCALAPPDATA%`)
   is resolved by preferring `~/.local`; a machine that genuinely uses the
   LOCALAPPDATA layout gets its files written to `~/.local`.

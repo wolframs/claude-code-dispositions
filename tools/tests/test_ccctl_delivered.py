@@ -47,6 +47,15 @@ def request(system="", messages=(), tools=None):
             "tools": [{"name": n, "description": d} for n, d in (tools or {}).items()]}
 
 
+nested_owner = {"If you are a subagent, do not spawn further subagents unless": "subagent-delegation-opt-in"}
+for label, req, expected in (
+    ("present", request(tools={"Agent": cc.SUBAGENT_DELEGATION_OPT_IN}), "DELIVERED"),
+    ("missing boundary", request(tools={"Agent": "stock description"}), "DISPLACED"),
+    ("absent tool", request(), "NOT IN SESSION"),
+):
+    verdict = cc.delivered_verdicts(req, nested_owner)[0][1]
+    check("nested delegation: " + label, verdict == expected, verdict)
+
 OWNERS = {
     "The longer you work": "disposition-floor-under-every-output-style",
     "Work that went right is not news": "disposition-floor-under-every-output-style",
@@ -158,6 +167,13 @@ check("client_data_armed: an empty toasty_thimble map entry turns the reminder O
 rows = {k for k, *_ in cc.client_data_rows({"atis": "t", "experimentKey": "x", "brand_new_key": 1})}
 check("client_data_rows: inert keys are dropped, an unknown key is shown",
       rows == {"brand_new_key"}, str(rows))
+# macOS, 2026-10-08: Opus 5.5's experiment served text for BOTH delegation
+# sections; only heron_brook's key was classified, so the other read as unknown.
+rows = {k: tid for k, _v, _var, _what, tid in cc.client_data_rows(
+    {"tengu_heron_brook": "# Finishing work", "tengu_brook_heron": "# Memory, notes and feedback"})}
+check("client_data_rows: server text for either delegation section names the cut that removes it",
+      rows == {"tengu_heron_brook": "delegation-override-cut",
+               "tengu_brook_heron": "delegation-override-cut"}, str(rows))
 data = slots[("claude-opus-5", "sdk-ts")][0]
 check("attribution: a displaced shell block is explained by a relaxed cozy_teapot",
       cc.delivered_attribution("bypass-auto-shell-block-invert", data, {}) is not None)
@@ -182,7 +198,10 @@ check("cc_project_dir: CC's sanitising rule",
 scratch = Path(tempfile.mkdtemp(prefix="ccctl-delivered-test-"))
 atexit.register(shutil.rmtree, scratch, True)
 fake_script = scratch / "fake-claude.py"
+capture_cwds = scratch / "capture-cwds.jsonl"
 fake_script.write_text(f"""import json, os, sys, urllib.request
+with open({str(capture_cwds)!r}, "a", encoding="utf-8") as log:
+    log.write(json.dumps(os.getcwd()) + "\\n")
 base = os.environ["ANTHROPIC_BASE_URL"]
 assert "CLAUDECODE" not in os.environ
 nag = os.environ.get("FAKE_NAG")
@@ -216,7 +235,6 @@ for turn in range(20):
 """, encoding="utf-8")
 fake = [sys.executable, str(fake_script)]
 os.environ["CLAUDECODE"] = "1"                  # what an agent's own shell carries
-before = set(Path(tempfile.gettempdir()).glob("ccctl-capture-*"))
 reqs, err = cc.capture_request("claude-x", "sdk", binary=fake, timeout=30)
 req = reqs[0] if reqs else None
 check("capture_request: the session's request is returned, the side call is not",
@@ -254,7 +272,9 @@ check("injected_texts: <system-reminder> blocks in a tool result count too",
       cc.injected_texts({"messages": [{"role": "user", "content": [
           {"type": "tool_result", "content": "data<system-reminder>\nbe careful\n</system-reminder>"}]}]})
       == ["be careful"])
-left = set(Path(tempfile.gettempdir()).glob("ccctl-capture-*")) - before
+owned_cwds = [Path(json.loads(line)) for line in capture_cwds.read_text(encoding="utf-8").splitlines()]
+left = {path for path in owned_cwds if path.exists()}
+check("capture_request: cleanup tracks this test's captures only", len(owned_cwds) == 4)
 check("capture_request: the capture cwd is gone afterwards", not left, str(left))
 
 missing = scratch / "no-request.py"

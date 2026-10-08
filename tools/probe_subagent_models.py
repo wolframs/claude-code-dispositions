@@ -2,6 +2,7 @@
 
     python3 tools/probe_subagent_models.py                 # the standard matrix
     python3 tools/probe_subagent_models.py <parent> <type> # one cell
+    python3 tools/probe_subagent_models.py --delegation-check [parent] [type]
 
 COSTS NOTHING. It borrows ccctl's delivered-capture trick: point
 ANTHROPIC_BASE_URL at a local socket and scrub every ANTHROPIC_*/CLAUDE* var
@@ -29,7 +30,7 @@ import http.server, importlib.util, json, os, re, shutil, subprocess, sys, tempf
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location(
-    "ccctl", str(Path(__file__).resolve().parent / "ccctl.py"))
+    "ccctl", str(Path(__file__).resolve().with_name("ccctl.py")))
 cc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cc)
 
@@ -184,8 +185,41 @@ def matrix(parent_model):
             print(f"  {t:18s} -> {got or f'NO SUBAGENT ({err})'}")
 
 
+def delegation_check(parent_model, subagent_type):
+    reqs, err = probe(parent_model, subagent_type)
+    if err or not reqs:
+        print(f"FAIL capture: {err or 'no requests'}")
+        return False
+    root = session_id(reqs[0])
+    if root == "?":
+        print("FAIL capture: no parent session identity")
+        return False
+    seen, passed, child_seen = set(), True, False
+    for req in reqs:
+        sid = session_id(req)
+        if sid in seen:
+            continue
+        seen.add(sid)
+        child = sid != root
+        child_seen |= child
+        description = next((t.get("description", "") for t in req.get("tools", [])
+                            if t.get("name") in ("Agent", "Task")), None)
+        ok = (description is None and child) or (
+            description is not None and cc.SUBAGENT_DELEGATION_OPT_IN in description)
+        passed &= ok and sid != "?"
+        print(f"{'PASS' if ok else 'FAIL'} {'child' if child else 'parent'} {req.get('model')}: "
+              + ("no agent tool" if description is None else "subagent-only opt-in "
+                 + ("delivered" if ok else "MISSING")))
+    if not child_seen:
+        print("FAIL capture: no child request")
+    return passed and child_seen
+
+
 if __name__ == "__main__":
-    if len(sys.argv) > 2:
+    if sys.argv[1:2] == ["--delegation-check"]:
+        sys.exit(0 if delegation_check(sys.argv[2] if len(sys.argv) > 2 else "claude-fable-5-1",
+                                      sys.argv[3] if len(sys.argv) > 3 else "general-purpose") else 1)
+    elif len(sys.argv) > 2:
         got, err = subagent_model(sys.argv[1], sys.argv[2], use_pin=True)
         print(f"{sys.argv[2]} from {sys.argv[1]} -> {got or f'NO SUBAGENT ({err})'}")
     else:

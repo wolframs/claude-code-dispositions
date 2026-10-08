@@ -38,8 +38,14 @@ ROOT = Path(__file__).resolve().parents[1]
 # 2.1.261 anchor matched and took the custom-model menu down with it. The
 # 2.1.270 overlay also repairs session-memory gate locators and uses
 # replacer callbacks to preserve dollar signs in captured minified names; the
-# .273 and .278 overlays are identical in content to it, because the patched
-# code structures have not moved across those releases — only minified names.
+# .273, .278 and .280 overlays are identical in content to it, because the
+# patched code structures did not move across those releases — only minified
+# names. The .283 overlay adds two locators: the session-memory gate grew a
+# trailing bypass conjunct, and opusplan's native 1M branch was hoisted into
+# its own declarator (notes/2026-09-28-win32-2.1.283.md). The .284 overlay is
+# identical in content to .283's (notes/2026-09-29-win32-2.1.284.md).
+# The .294 overlay adds one agentsMd locator: 2.1.293 gave the CLAUDE.md
+# reader a fifth parameter, a read hook (notes/2026-10-08-win32-2.1.294.md).
 # The filename is the coverage record `ccctl.py analyze` reads; the build
 # below tests those repairs before adapting the generated bundle.
 #
