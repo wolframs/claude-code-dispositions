@@ -239,7 +239,7 @@ separate Claude and other-agent instructions.
 GitHub holds a filtered copy, never this repository's history: `baseline/`,
 `ab/`, `corpus/`, `notes/` and `TODO.md` stay here, and so do all machine
 details. Do not add a GitHub remote to this checkout. The copy is made by the
-public-mirror tool (Forgejo `[HUMAN]/public-mirror`,
+public-mirror tool (Forgejo `[HUMAN]/public-mirror`, branch `manifests-four`,
 `manifests/claude-code-dispositions.yaml`; the public README and
 `ABOUT-THIS-REPOSITORY.md` are overrides under
 `overrides/claude-code-dispositions/`):
@@ -252,10 +252,13 @@ public-mirror tool (Forgejo `[HUMAN]/public-mirror`,
    how machines are reached (ssh, hosts, ports) need a look before they ship.
 3. `bin/mirror --manifest manifests/claude-code-dispositions.yaml --source
    <clone at site-prep-2> --stage <tmp> --dry-run --history <public clone>`
-   until the gate passes.
+   until the gate passes. Then `tools/stock_runs.py` on the stage and on the
+   public clone's tree: the gate does not measure the trim, and a run of stock
+   words that is new against the public tree is one to trim on `site-prep-2`.
 4. Same command with `--publish <public clone>` (no `--orphan`) while the
    public clone has branch `github-main` checked out, then push that branch to
-   GitHub `main`. Set `history_reviewed` in the manifest to the new tip.
+   GitHub `main`. Set `history_reviewed` in the manifest to the new tip, as
+   the full hash: `--publish` refuses an abbreviated one.
 
 The public README is written for strangers and lives in the override, not
 here; update it there when the story changes.

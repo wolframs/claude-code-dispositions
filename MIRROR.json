@@ -4,13 +4,13 @@
     "add": 1,
     "copy": 7,
     "override": 1,
-    "redact": 117
+    "redact": 118
   },
   "manifest_name": "claude-code-dispositions",
-  "manifest_sha256": "71b5f93443d613f2d450a37be33fb1683a4a82793370865a772eeb9e944c6c57",
+  "manifest_sha256": "65d33871b2084bab78673084be2fba14933d1a52601021c2a65d7498f5e037cb",
   "open_reviews": 0,
-  "source_commit": "a2fea9266a30a1266a8a01e45c3c75b5245f44ac",
-  "staged_files": 126,
+  "source_commit": "cf8c79e9e0ac505782297e30e0a8d3a9a83ea2dc",
+  "staged_files": 127,
   "tool_version": "1",
   "unclassified_files": 0
 }

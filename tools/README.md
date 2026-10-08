@@ -10,6 +10,7 @@
 | `check_repo.py` | One offline command: active links, release/review consistency, generated-view freshness, syntax, and every `tests/test_*.py` |
 | `refresh_corpus.sh`, `extract_transcript.py`, `transcript.py`, `build_corpus_index.py` | Explicit capture and rendering of real session evidence |
 | `extract_human_turns.py`, `build_complaint_set.py`, `merge_sort.py` | Reading aids over the corpus; outputs are not behavioral acceptance scores |
+| `stock_runs.py` | Before a public mirror: runs of eight or more stock-prompt words in a staged tree, to compare with the tree already public |
 
 From the repository root:
 

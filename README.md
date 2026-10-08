@@ -1,12 +1,27 @@
 # claude-code-dispositions
 
 <!-- DRAFT: needs author -->
-Claude Code's system prompt is written for a user it has never met. On my own
-machines I rewrite parts of it with [tweakcc](https://github.com/Piebald-AI/tweakcc):
-the calibration for that unknown user comes out, and a stated disposition for
-both parties goes in, Claude's role and mine. This repository holds the spec
-that argues for each change, the replacement text in tweakcc's own file format,
-and the tooling that keeps it installed from one Claude Code release to the next.
+**Claude Code's system prompt, re-aimed at the person who actually runs it.**
+
+![licence: MIT](https://img.shields.io/badge/licence-MIT-blue)
+![platforms: Linux, macOS, Windows](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)
+![python: standard library only](https://img.shields.io/badge/python-stdlib%20only-informational)
+[![built on tweakcc](https://img.shields.io/badge/built%20on-tweakcc-8A2BE2)](https://github.com/Piebald-AI/tweakcc)
+
+<!-- DRAFT: needs author -->
+## TL;DR
+
+- 🎯 **The problem.** Claude Code's prompt is written for a user it has never
+  met. If you run it all day, that calibration is wrong for you, always in the
+  same direction: too much asking, too much narrating, too much restating.
+- ✍️ **The change.** The calibration for that unknown user comes out. A stated
+  disposition goes in: whom Claude is working for, and what each side owns.
+- 🧾 **Every edit is argued.** The spec was written before any prompt was
+  touched. An edit without a line in it gets reverted.
+- 🛠️ **It stays installed.** One Python file patches a staged copy of the
+  binary, verifies it, swaps it in, and rolls back byte for byte.
+- 🚫 **What it is not.** Not a jailbreak and not a personality mod. Disagreeing
+  when warranted, reporting failures faithfully and not fabricating all stay.
 
 <!-- DRAFT: needs author -->
 The installed replacement for Claude Code's "Delivering work" section opens
@@ -16,6 +31,108 @@ like this
 > There is an operator on the other end of this, not an audience. They ran it,
 > they own the consequences of their own instructions, and they will say when
 > they want more caution.
+
+<!-- DRAFT: needs author -->
+> [!NOTE]
+> This is a personal project and has no connection to Anthropic. It patches the
+> Claude Code binary on your own machine, built on
+> [tweakcc](https://github.com/Piebald-AI/tweakcc). A Claude Code update
+> replaces the patched binary, which is what most of the tooling here is for.
+
+<!-- DRAFT: needs author -->
+## Contents
+
+- [What changes](#what-changes)
+- [Quick start](#quick-start)
+- [How an update goes](#how-an-update-goes)
+- [What is here](#what-is-here)
+- [Why](#why)
+- **The details**
+  - [Using it](#using-it)
+  - [What assumes my setup](#what-assumes-my-setup)
+  - [Reading order](#reading-order)
+  - [Licence](#licence)
+
+<!-- DRAFT: needs author -->
+## What changes
+
+The left column paraphrases the stock behaviour; this tree carries none of
+Anthropic's text ([`ABOUT-THIS-REPOSITORY.md`](ABOUT-THIS-REPOSITORY.md)).
+[`edits/targets.json`](edits/targets.json) has every target with its intent.
+
+| | Stock Claude Code | With these edits | Target |
+| --- | --- | --- | --- |
+| 👤 **Reader** | An unknown user who may need reassurance | An operator who ran the command and owns the consequences | `system-prompt-delivering-work-at-full-scope` |
+| 🚦 **Permission** | Confirm before acting | Reversible work inside the task is already authorized. Ask only for a commitment outside it | same |
+| 📬 **Closing message** | An account of what was done | Where things stand first. What changed, what happens if nothing is done. How it was done stays out | `disposition-floor-under-every-output-style` |
+| 🔇 **Progress updates** | A reminder to say something after a run of silent tool calls | Switched off | `silent-turn-reminder-off` |
+| 🌿 **Commits** | Commit and push wait until the user asks | Committing finished work is part of the task. Someone else's repository still needs a go-ahead | `git-commit-authority` |
+| 🤝 **Delegation** | Late sections steer away from subagents | The parent may delegate. A subagent spawns further ones only on explicit opt-in | `delegation-override-cut`, `subagent-delegation-opt-in` |
+| 🩹 **Corrections** | Restraint, stated as a stack of don'ts | The same restraint stated once. A follow-up question is not a sign of an error | `system-prompt-correction-restraint` |
+| 📋 **TodoWrite** | Mechanics plus a mass of worked examples | The mechanics | `tool-description-todowrite` |
+
+<!-- DRAFT: needs author -->
+## Quick start
+
+**Just read it.** Start with
+[`spec/00-disposition-spec.md`](spec/00-disposition-spec.md), then open any file
+in [`edits/`](edits/).
+
+**Try the fragments with tweakcc alone.** This installs the replacement
+fragments and nothing else (see [Using it](#using-it) for what is missing):
+
+```sh
+cp edits/system-prompt-*.md edits/tool-description-*.md ~/.tweakcc/system-prompts/
+tweakcc --apply
+```
+
+**Install everything with `ccctl.py`.** It needs git, node with tweakcc 4.3.3
+or newer, and Claude Code's native install:
+
+```sh
+mkdir ~/ccctl && cd ~/ccctl            # config, snapshots and changelog live here
+cp <your clone>/tools/ccctl.py .
+python3 ccctl.py init <git-url>        # sparse-clones the repository into ./repo
+python3 ccctl.py apply                 # pull, patch a staged copy, verify, swap
+python3 ccctl.py status --check        # 0 patched and verified, 2 fault, 3 stock on purpose
+python3 ccctl.py restore               # byte-exact rollback to stock
+```
+
+<!-- DRAFT: needs author -->
+## How an update goes
+
+The live binary is never edited in place. A new Claude Code release is analysed
+first, and nothing is swapped in unless every target has a clean verdict and
+every marker verifies.
+
+```mermaid
+flowchart LR
+    R[New Claude Code release] --> A[analyze: a verdict per target]
+    A -->|clean| P[patch a staged copy]
+    A -->|not clean| M[stop: a human looks]
+    P --> V[verify markers, launch test]
+    V -->|ok| S[swap in]
+    V -->|fail| K[keep the old binary]
+    S --> T[status --check, status --delivered]
+    S -.-> B[restore: back to stock]
+```
+
+## What is here
+
+<!-- DRAFT: needs author -->
+| Path | What it is |
+| --- | --- |
+| [`spec/`](spec/) | The disposition spec, written before any stock prompt was touched, so each edit is a diff against an intent rather than a reaction to a block of text. `00` is the argument, `10` the text that is installed, `15` what the closing message owes the operator, `30` and `40` how the edits survive updates. |
+| [`edits/`](edits/) | The change itself, in tweakcc's per-component format: one whole replacement body per changed prompt fragment, `targets.json` (every target with its intent and the spec line behind it), `MARKERS.txt` and `ANTIMARKERS.txt` (what a patched binary must and must not contain), `reviews.json`. |
+| [`tools/ccctl.py`](tools/ccctl.py) | One file, standard library only, for Linux, macOS and Windows: fetch a release, analyse it against the edits, patch a staged copy, verify, swap, roll back. [`tools/README.md`](tools/README.md) lists the helpers around it. |
+| [`tools/tweakcc-overlays/`](tools/tweakcc-overlays/) | Patches against tweakcc's own source for Claude Code builds its feature patches did not yet cover. |
+| [`probes/`](probes/) | Nine small synthetic repositories built for a probe battery that has since been retired. |
+| [`release.json`](release.json) | The Claude Code release the edits were last checked against, and the stock binary hashes for it. |
+| [`AGENTS.md`](AGENTS.md) | The working agreement for an agent operating on this repository. |
+
+<!-- DRAFT: needs author -->
+What this tree leaves out, how much stock wording the edits still carry, and
+what the licence covers: [`ABOUT-THIS-REPOSITORY.md`](ABOUT-THIS-REPOSITORY.md).
 
 ## Why
 
@@ -33,22 +150,10 @@ stated disposition for both parties — Claude's role and mine — on the workin
 theory that dispositions regenerate correct micro-decisions across a long
 trajectory where enumerated rules degrade.
 
-## What is here
+---
 
 <!-- DRAFT: needs author -->
-| Path | What it is |
-| --- | --- |
-| `spec/` | The disposition spec, written before any stock prompt was touched, so each edit is a diff against an intent rather than a reaction to a block of text. `00` is the argument, `10` the text that is installed, `15` what the closing message owes the operator, `30` and `40` how the edits survive updates. |
-| `edits/` | The change itself, in tweakcc's per-component format: one whole replacement body per changed prompt fragment, `targets.json` (every target with its intent and the spec line behind it), `MARKERS.txt` and `ANTIMARKERS.txt` (what a patched binary must and must not contain), `reviews.json`. |
-| `tools/ccctl.py` | One file, standard library only, for Linux, macOS and Windows: fetch a release, analyse it against the edits, patch a staged copy, verify, swap, roll back. `tools/README.md` lists the helpers around it. |
-| `tools/tweakcc-overlays/` | Patches against tweakcc's own source for Claude Code builds its feature patches did not yet cover. |
-| `probes/` | Nine small synthetic repositories built for a probe battery that has since been retired. |
-| `release.json` | The Claude Code release the edits were last checked against, and the stock binary hashes for it. |
-| `AGENTS.md` | The working agreement for an agent operating on this repository. |
-
-<!-- DRAFT: needs author -->
-What this tree leaves out, how much stock wording the edits still carry, and
-what the licence covers: [`ABOUT-THIS-REPOSITORY.md`](ABOUT-THIS-REPOSITORY.md).
+# The details
 
 ## Using it
 
@@ -67,41 +172,24 @@ tweakcc --list-system-prompts <version>
 ```
 
 That lists every component by id and caches the full text in
-`~/.tweakcc/prompt-data-cache/prompts-<version>.json`. Once `ccctl.py` is set up
-(below), `python3 ccctl.py diff custom <version> <id>` prints stock against the
+`~/.tweakcc/prompt-data-cache/prompts-<version>.json`. Once `ccctl.py` is set
+up, `python3 ccctl.py diff custom <version> <id>` prints stock against the
 replacement as a unified diff.
 
 **Apply with tweakcc alone.** tweakcc reads user modifications from
-`~/.tweakcc/system-prompts/`:
+`~/.tweakcc/system-prompts/`, so the two commands under
+[Quick start](#quick-start) install the replacement fragments and nothing else.
+The rest of the change is text tweakcc does not extract, such as the reporting
+floor under every output style and the Bash tool's compact git section
+(`spec/00` §2.3), and gates rather than text, such as the model clauses of the
+silent-turn reminder. Those are adhoc patches, and only `ccctl.py` applies
+them. On Windows, `tweakcc --apply` did not write fragments when this was built
+(`spec/40`); use `ccctl.py` there.
 
-```sh
-cp edits/system-prompt-*.md edits/tool-description-*.md ~/.tweakcc/system-prompts/
-tweakcc --apply
-```
-
-This installs the replacement fragments and nothing else. The rest of the
-change is text tweakcc does not extract, such as the reporting floor under every
-output style and the Bash tool's compact git section (`spec/00` §2.3), and gates
-rather than text, such as the model clauses of the silent-turn reminder. Those
-are adhoc patches, and only `ccctl.py` applies them. On Windows,
-`tweakcc --apply` did not write fragments when this was built (`spec/40`); use
-`ccctl.py` there.
-
-**Apply with `ccctl.py`.** It needs git, node with tweakcc 4.3.3 or newer, and
-Claude Code's native install. It patches a staged copy and swaps it in only
-after every marker verifies; the live binary is never edited in place.
-
-```sh
-mkdir ~/ccctl && cd ~/ccctl            # config, snapshots and changelog live here
-cp <your clone>/tools/ccctl.py .
-python3 ccctl.py init <git-url>        # sparse-clones the repository into ./repo
-python3 ccctl.py apply                 # pull, patch a staged copy, verify, swap
-python3 ccctl.py status --check        # 0 patched and verified, 2 fault, 3 stock on purpose
-python3 ccctl.py restore               # byte-exact rollback to stock
-```
-
-`apply` pulls from the `init` URL before every run, so point it at a fork you
-can edit. A Claude Code update replaces the patched binary; for a new release,
+**Apply with `ccctl.py`.** It patches a staged copy and swaps it in only after
+every marker verifies; the live binary is never edited in place. `apply` pulls
+from the `init` URL before every run, so point it at a fork you can edit. A
+Claude Code update replaces the patched binary; for a new release,
 `ccctl.py analyze <version>` gives every target a verdict before anything
 changes, and `ccctl.py update <version>` patches and swaps only on a clean
 verdict. The exit codes, the settings that stop Claude Code from updating
@@ -110,8 +198,9 @@ itself, and the session-start tripwire are in the runbook in
 proves the edits are in the binary; start a session to see that the binary
 still runs.
 
-**What assumes my setup.**
+## What assumes my setup
 
+<!-- DRAFT: needs author -->
 - The runbook in `spec/40` is written for three machines of mine, one per
   operating system, that pull each other's rounds from one repository. The
   merge advice `update` prints comes from that.
