@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-labelledby="title desc">
+  <title id="title">I thought that was implicit in this repo's setup?</title>
+  <desc id="desc">A complaint after a finished change was left uncommitted. Personal edits to Claude Code's system prompts.</desc>
+  <rect width="1200" height="340" rx="6" fill="#f3f0e7"/>
+  <path d="M42 0V340" stroke="#b64a32" stroke-opacity=".45"/>
+  <path d="M0 60H1200M0 270H1200" stroke="#343b36" stroke-opacity=".16"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#343b36">
+    <text x="70" y="38" font-size="15" letter-spacing="1.5">claude-code-dispositions</text>
+    <text x="68" y="142" font-size="57" font-weight="600">“I thought that was implicit</text>
+    <text x="70" y="213" font-size="57" font-weight="600">in this repo’s setup?”</text>
+    <text x="70" y="312" font-size="18" fill="#596456">After a finished change was left uncommitted.</text>
+  </g>
+</svg>

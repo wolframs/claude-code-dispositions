@@ -1439,8 +1439,8 @@ for args, want in cases:
 
 # --- 2026-09-25: a shadowing old tweakcc must not stop a non-interactive apply
 # Linux has a root-installed tweakcc 4.0.13 in /usr/bin and the operator's
-# 4.3.3 under the ~/.npmrc prefix, which only ~/.zshrc puts on PATH. Over ssh
-# the first on PATH was the old one and ccctl refused to run.
+# 4.3.3 under the ~/.npmrc prefix, which only ~/.zshrc puts on PATH. In a
+# non-interactive shell the first on PATH was the old one and ccctl refused to run.
 if sys.platform != "win32":
     import contextlib, io
     from unittest import mock

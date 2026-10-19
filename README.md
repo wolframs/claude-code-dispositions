@@ -1,261 +1,187 @@
 # claude-code-dispositions
 
-<!-- DRAFT: needs author -->
-**Claude Code's system prompt, re-aimed at the person who actually runs it.**
+![“I thought that was implicit in this repo’s setup?” — after a finished change was left uncommitted.](assets/readme-hero.svg)
 
-![licence: MIT](https://img.shields.io/badge/licence-MIT-blue)
-![platforms: Linux, macOS, Windows](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)
-![python: standard library only](https://img.shields.io/badge/python-stdlib%20only-informational)
-[![built on tweakcc](https://img.shields.io/badge/built%20on-tweakcc-8A2BE2)](https://github.com/Piebald-AI/tweakcc)
+Personal edits to Claude Code's system prompts, using
+[tweakcc](https://github.com/Piebald-AI/tweakcc). Python tooling for Linux, macOS
+and Windows. [MIT](LICENSE).
 
-<!-- DRAFT: needs author -->
-## TL;DR
+[What prompted this](#what-prompted-this) · [Using the edits](#using-the-edits) · [How updates work](#how-updates-work) · [The spec](spec/00-disposition-spec.md)
 
-- 🎯 **The problem.** Claude Code's prompt is written for a user it has never
-  met. If you run it all day, that calibration is wrong for you, always in the
-  same direction: too much asking, too much narrating, too much restating.
-- ✍️ **The change.** The calibration for that unknown user comes out. A stated
-  disposition goes in: whom Claude is working for, and what each side owns.
-- 🧾 **Every edit is argued.** The spec was written before any prompt was
-  touched. An edit without a line in it gets reverted.
-- 🛠️ **It stays installed.** One Python file patches a staged copy of the
-  binary, verifies it, swaps it in, and rolls back byte for byte.
-- 🚫 **What it is not.** Not a jailbreak and not a personality mod. Disagreeing
-  when warranted, reporting failures faithfully and not fabricating all stay.
+I run several agent sessions alongside each other. I want them to use the
+context and tools available, make sensible inferences, and do the work I asked
+for. I also want to be able to read the finishing message without having
+followed every tool call.
 
-<!-- DRAFT: needs author -->
-The installed replacement for Claude Code's "Delivering work" section opens
-like this
-([`edits/system-prompt-delivering-work-at-full-scope.md`](edits/system-prompt-delivering-work-at-full-scope.md)):
+These edits grew out of repeatedly having to explain that. The quotations
+below are my own complaints; the paragraphs after them describe what the edits
+try to change.
 
-> There is an operator on the other end of this, not an audience. They ran it,
-> they own the consequences of their own instructions, and they will say when
-> they want more caution.
+## What prompted this
 
-<!-- DRAFT: needs author -->
-> [!NOTE]
-> This is a personal project and has no connection to Anthropic. It patches the
-> Claude Code binary on your own machine, built on
-> [tweakcc](https://github.com/Piebald-AI/tweakcc). A Claude Code update
-> replaces the patched binary, which is what most of the tooling here is for.
+### Asking for permission that was already given
 
-<!-- DRAFT: needs author -->
-## Contents
+> Claude's implicit disposition is to already stop on anything that might
+> faintly smell like "I might not be authorized to do this."
 
-- [What changes](#what-changes)
-- [Quick start](#quick-start)
-- [How an update goes](#how-an-update-goes)
-- [What is here](#what-is-here)
-- [Why](#why)
-- **The details**
-  - [Using it](#using-it)
-  - [What assumes my setup](#what-assumes-my-setup)
-  - [Reading order](#reading-order)
-  - [Licence](#licence)
+A reversible step that follows from the task should not need another prompt
+from me. That includes useful supporting work and settings changes when they
+help resolve the task properly. A consequential commitment outside the task is
+still a reason to ask. The [task-authority fragment](edits/system-prompt-delivering-work-at-full-scope.md)
+makes that distinction explicit.
 
-<!-- DRAFT: needs author -->
-## What changes
+The header came from a finished change left uncommitted. The patch also removes
+the blanket instruction to wait for a separate commit request, while preserving
+the boundary around publishing to somebody else's repository.
 
-The left column paraphrases the stock behaviour; this tree carries none of
-Anthropic's text ([`ABOUT-THIS-REPOSITORY.md`](ABOUT-THIS-REPOSITORY.md)).
-[`edits/targets.json`](edits/targets.json) has every target with its intent.
+### Stopping before looking for the information
 
-| | Stock Claude Code | With these edits | Target |
-| --- | --- | --- | --- |
-| 👤 **Reader** | An unknown user who may need reassurance | An operator who ran the command and owns the consequences | `system-prompt-delivering-work-at-full-scope` |
-| 🚦 **Permission** | Confirm before acting | Reversible work inside the task is already authorized. Ask only for a commitment outside it | same |
-| 🔎 **Stopping points** | May hand back a finding that more investigation could resolve | Use the available context, tools and records to carry the authorized task forward | `system-prompt-delivering-work-at-full-scope` |
-| 📬 **Closing message** | An account of what was done | Where things stand first. What changed, what happens if nothing is done. How it was done stays out | `disposition-floor-under-every-output-style` |
-| 🔇 **Progress updates** | A reminder to say something after a run of silent tool calls | Switched off | `silent-turn-reminder-off` |
-| 🌿 **Commits** | Commit and push wait until the user asks | Committing finished work is part of the task. Someone else's repository still needs a go-ahead | `git-commit-authority` |
-| 🤝 **Delegation** | Late sections steer away from subagents | The parent may delegate. A subagent spawns further ones only on explicit opt-in | `delegation-override-cut`, `subagent-delegation-opt-in` |
-| 🩹 **Corrections** | Restraint, stated as a stack of don'ts | The same restraint stated once. A follow-up question is not a sign of an error | `system-prompt-correction-restraint` |
-| 📋 **TodoWrite** | Mechanics plus a mass of worked examples | The mechanics | `tool-description-todowrite` |
+> Agents should go and try to find the info they need when they notice
+> themselves reaching for a stopping point of any kind in any formulation.
 
-On my own workload, Opus 5.5 has been noticeably more proactive with the
-current edits. This is an observation from daily use, not a benchmark.
+The agent has a repo, tools, records and neighboring work to draw on. An
+unresolved finding is a reason to investigate before handing the task back.
+Finding out what is true and making the consequential change are separate
+decisions; permission for one does not imply permission for the other.
 
-<!-- DRAFT: needs author -->
-## Quick start
+### Turning an inference into something I supposedly agreed to
 
-**Just read it.** Start with
-[`spec/00-disposition-spec.md`](spec/00-disposition-spec.md), then open any file
-in [`edits/`](edits/).
+> "as agreed" -> nope, that was a very safe claude adding that "agreement" to
+> the project files or inferring that agreement from a prompt of mine, i never
+> instructed anything like that.
 
-**Try the fragments with tweakcc alone.** This installs the replacement
-fragments and nothing else (see [Using it](#using-it) for what is missing):
+An agent's earlier caution can become a project rule, then come back as my
+instruction. The edits require it to distinguish what I said from what an agent
+inferred, and to reconsider its own restrictions rather than treating their
+presence in a file as proof that they belong there.
+
+### Writing the finishing message for someone who watched everything
+
+> I don't go scrolling back through 30 verbose printed bash calls to catch
+> what they might have thought mid run…
+
+The closing message needs to tell me where things stand, what changed, which
+repos or systems were touched, and the consequences if I do nothing. It needs
+to work in a small terminal pane beside other sessions. An account of the
+investigation usually does not help me act. The
+[reporting contract](spec/15-reporting-contract.md) is the reasoning behind that
+part of the patch.
+
+### Making the work cheap for the agent, expensive for me
+
+> The problem is "cheap" is true for the agent but not for me, and a smart
+> agent should understand that if the operator is the measurement, then
+> cheapness should be measured at the operator's outcome layer.
+
+Finishing with an offer to do the remaining authorized work leaves me managing
+another turn. So do redundant backups and processes left running after a task.
+The disposition asks the agent to evaluate the work and its consequences for
+the person using it, including the shared machine and the next session.
+
+That is why this project patches the underlying instructions instead of adding
+ever more counter-instructions to `CLAUDE.md`. The
+[spec](spec/00-disposition-spec.md) assigns each rule a home; the
+[target map](edits/targets.json) connects the actual patches to their intent.
+Disagreeing with me, reporting failures and checking facts remain part of the
+job.
+
+On my own workload, Opus 5.5 has been quite a bit more proactive under the
+current edits. That is my experience using it, not a benchmark result.
+
+## Using the edits
+
+The [disposition spec](spec/00-disposition-spec.md) is the
+argument. The [replacement fragments](edits/) are the actual authored text.
+The [target map](edits/targets.json) connects each change to its intent.
+These reflect my preferences; adapt them to yours.
+
+The complete patch set is applied by `ccctl.py`. It needs Python, git, Node,
+tweakcc and a native Claude Code installation. Review the
+[setup runbook](spec/40-update-pipeline.md) and the
+[reviewed tweakcc build](spec/45-pre-merge-tweakcc-data.md) first;
+[`release.json`](release.json) is the compatibility checkpoint.
+
+From a clone of this repository, copy `tools/ccctl.py` into a separate working
+directory. Then run the following there, replacing `<your-fork-url>` with a
+repository you control:
+
+```sh
+python3 ccctl.py init <your-fork-url>
+python3 ccctl.py apply
+python3 ccctl.py status --check
+python3 ccctl.py status --delivered
+```
+
+`init` creates a sparse checkout in `./repo`. `apply` pulls from that repository,
+patches a staged binary and verifies it before swapping it in. Start a **fresh
+session** to use the new prompt; a resumed session retains its original one.
+
+To return to the verified stock binary:
+
+```sh
+python3 ccctl.py restore
+```
+
+<details>
+<summary><strong>Fragments alone, comparison tools and setup assumptions</strong></summary>
+
+To install only the replacement fragments with tweakcc:
 
 ```sh
 cp edits/system-prompt-*.md edits/tool-description-*.md ~/.tweakcc/system-prompts/
 tweakcc --apply
 ```
 
-**Install everything with `ccctl.py`.** It needs git, Node, tweakcc and
-Claude Code's native install. `release.json` pins the reviewed tweakcc build
-and Claude Code compatibility checkpoint:
+This leaves out the additional binary patches and gate overrides. Use
+`ccctl.py` for the complete behavior change.
+
+To inspect the stock components locally, run
+`tweakcc --list-system-prompts <version>`. After setting up `ccctl.py`,
+`python3 ccctl.py diff custom <version> <id>` compares one against its
+replacement. The selected version is in `release.json`.
+
+The runbook reflects a personal fleet. Review its machine settings rather than
+copying them blindly. Subagent model pinning is optional; this setup currently
+uses the defaults. `release.json` also records whether a tweakcc overlay is
+needed; historical overlays are not a requirement to install them all.
+
+This public tree omits stock baselines and private working evidence.
+`tools/build_ab.py` and `tools/check_repo.py` depend on that material and cannot
+run from this filtered copy. [About this repository](ABOUT-THIS-REPOSITORY.md)
+explains the boundary and the stock wording retained in replacement bodies.
+
+</details>
+
+## How updates work
+
+A new release can leave our replacement text in the binary while introducing a
+branch that never reads it. The checks cover the code that selects the text,
+as well as the text itself.
+
+The update path is **analyze → stage → patch → verify → swap**. A failed check
+leaves the installed binary in place. For a new release, name the version:
 
 ```sh
-mkdir ~/ccctl && cd ~/ccctl            # config, snapshots and changelog live here
-cp <your clone>/tools/ccctl.py .
-python3 ccctl.py init <git-url>        # sparse-clones the repository into ./repo
-python3 ccctl.py apply                 # pull, patch a staged copy, verify, swap
-python3 ccctl.py status --check        # 0 patched and verified, 2 fault, 3 stock on purpose
-python3 ccctl.py restore               # byte-exact rollback to stock
+python3 ccctl.py analyze <version>
+python3 ccctl.py update <version>
 ```
 
-<!-- DRAFT: needs author -->
-## How an update goes
+`status --check` checks the installed patches. `status --delivered` captures
+what each configured model receives through the CLI and Agent SDK using a local
+endpoint, without a paid model request. Neither establishes a universal
+behavioral improvement; that remains something to observe in use.
 
-The live binary is never edited in place. A new Claude Code release is analysed
-first, and nothing is swapped in unless every target has a clean verdict and
-every marker verifies.
-
-```mermaid
-flowchart LR
-    R[New Claude Code release] --> A[analyze: a verdict per target]
-    A -->|clean| P[patch a staged copy]
-    A -->|not clean| M[stop: a human looks]
-    P --> V[verify markers, launch test]
-    V -->|ok| S[swap in]
-    V -->|fail| K[keep the old binary]
-    S --> T[status --check, status --delivered]
-    S -.-> B[restore: back to stock]
-```
-
-## What is here
-
-<!-- DRAFT: needs author -->
-| Path | What it is |
-| --- | --- |
-| [`spec/`](spec/) | The disposition spec, written before any stock prompt was touched, so each edit is a diff against an intent rather than a reaction to a block of text. `00` is the argument, `10` the text that is installed, `15` what the closing message owes the operator, `30` and `40` how the edits survive updates. |
-| [`edits/`](edits/) | The change itself, in tweakcc's per-component format: one whole replacement body per changed prompt fragment, `targets.json` (every target with its intent and the spec line behind it), `MARKERS.txt` and `ANTIMARKERS.txt` (what a patched binary must and must not contain), `reviews.json`. |
-| [`tools/ccctl.py`](tools/ccctl.py) | One file, standard library only, for Linux, macOS and Windows: fetch a release, analyse it against the edits, patch a staged copy, verify, swap, roll back. [`tools/README.md`](tools/README.md) lists the helpers around it. |
-| [`tools/tweakcc-overlays/`](tools/tweakcc-overlays/) | Patches against tweakcc's own source for Claude Code builds its feature patches did not yet cover. |
-| [`probes/`](probes/) | Nine small synthetic repositories built for a probe battery that has since been retired. |
-| [`release.json`](release.json) | The Claude Code release the edits were last checked against, and the stock binary hashes for it. |
-| [`AGENTS.md`](AGENTS.md) | The working agreement for an agent operating on this repository. |
-
-<!-- DRAFT: needs author -->
-What this tree leaves out, how much stock wording the edits still carry, and
-what the licence covers: [`ABOUT-THIS-REPOSITORY.md`](ABOUT-THIS-REPOSITORY.md).
-
-## Why
-
-Claude Code ships a large, layered set of prompts: a main loop prompt, per-tool
-descriptions, per-subagent prompts, and per-turn injected reminders. Much of it
-is audience calibration written for an unknown user — verbosity floors,
-restate-before-answering, confirm-before-acting, stacked negative instructions.
-For an operator who runs several sessions a day, that calibration is wrong in a
-specific and consistent direction.
-
-The goal is **not** to strip character or to remove epistemic hygiene
-(disagreeing when warranted, reporting failures faithfully, not fabricating).
-Those are load-bearing. The goal is to replace generic-user calibration with a
-stated disposition for both parties — Claude's role and mine — on the working
-theory that dispositions regenerate correct micro-decisions across a long
-trajectory where enumerated rules degrade.
+| Start here | What you will find |
+| :--- | :--- |
+| [The argument](spec/00-disposition-spec.md) | The working relationship and the reasoning behind the edits. |
+| [The reporting contract](spec/15-reporting-contract.md) | What the operator needs from a closing message. |
+| [The replacements](edits/README.md) | Authored fragments, target mapping and review records. |
+| [The update pipeline](spec/40-update-pipeline.md) | Deployment, machine settings, verification and rollback. |
+| [The tools](tools/README.md) | The single-file controller and its supporting utilities. |
 
 ---
 
-<!-- DRAFT: needs author -->
-# The details
-
-## Using it
-
-<!-- DRAFT: needs author -->
-**Read.** Start with [`spec/00-disposition-spec.md`](spec/00-disposition-spec.md).
-Every edit has to be justified by a line in it, and an edit that is not gets
-reverted.
-
-**Compare.** Each `edits/<id>.md` is named after tweakcc's id for the component
-it replaces. To see the stock text next to it, let tweakcc fetch the prompt data
-for the release the edits were last checked against, the `ccVersion` in
-`release.json`:
-
-```sh
-tweakcc --list-system-prompts <version>
-```
-
-That lists every component by id and caches the full text in
-`~/.tweakcc/prompt-data-cache/prompts-<version>.json`. Once `ccctl.py` is set
-up, `python3 ccctl.py diff custom <version> <id>` prints stock against the
-replacement as a unified diff.
-
-**Apply with tweakcc alone.** tweakcc reads user modifications from
-`~/.tweakcc/system-prompts/`, so the two commands under
-[Quick start](#quick-start) install the replacement fragments and nothing else.
-The rest of the change is text tweakcc does not extract, such as the reporting
-floor under every output style and the Bash tool's compact git section
-(`spec/00` §2.3), and gates rather than text, such as the model clauses of the
-silent-turn reminder. Those are adhoc patches, and only `ccctl.py` applies
-them. Use `ccctl.py` for the complete patch set on every platform; the exact
-tweakcc build and any historical adaptations are documented in `spec/45`.
-
-**Apply with `ccctl.py`.** It patches a staged copy and swaps it in only after
-every marker verifies; the live binary is never edited in place. `apply` pulls
-from the `init` URL before every run, so point it at a fork you can edit. A
-Claude Code update replaces the patched binary; for a new release,
-`ccctl.py analyze <version>` gives every target a verdict before anything
-changes, and `ccctl.py update <version>` patches and swaps only on a clean
-verdict. The exit codes, the settings that stop Claude Code from updating
-itself, and the session-start tripwire are in the runbook in
-[`spec/40-update-pipeline.md`](spec/40-update-pipeline.md). `status --check`
-proves the edits are in the binary; start a session to see that the binary
-still runs.
-
-## What assumes my setup
-
-<!-- DRAFT: needs author -->
-- The runbook in `spec/40` is written for three machines of mine, one per
-  operating system, that pull each other's rounds from one repository. The
-  merge advice `update` prints comes from that.
-- The subagent model pin that `status` reports and `update` asks about is my
-  standing choice, not something the edits need.
-- `spec/45` and `tools/tweakcc-overlays/` pin tweakcc to a reviewed commit with
-  local patches. With a published tweakcc the edits still apply and verify;
-  `analyze` says the overlay is missing, and tweakcc's "patches applied" banner
-  may not appear in Claude Code's opener.
-- `tools/build_ab.py` and `tools/check_repo.py` read stock text that this tree
-  does not carry, so they do not run from here.
-- The edits address one reader: an operator running several sessions at once,
-  who checks the artifact rather than the account of it. `spec/00` §3.4
-  separates what is universal from what belongs in your own
-  `~/.claude/CLAUDE.md`.
-
-## Reading order
-
-1. `spec/00-disposition-spec.md` — the intent. §3.1b (locus of evaluation) and
-   §3.4 (settledness, five standing questions) are the load-bearing sections.
-   <!-- DRAFT: needs author -->
-   One of the five: *Will a direct statement land badly?* Default answer: *No.
-   The reader ran the command.*
-2. `spec/10-draft-payload.md` — the universal disposition block that is actually
-   installed, plus the deletion list it depends on.
-3. `spec/15-reporting-contract.md` — what the closing message owes the operator.
-   The reader model, three measured failure shapes, and which of a controlled
-   language's rules survive inside a prompt fragment. Read §1 first: it traces
-   how a stated requirement was dropped in five defensible steps.
-4. <!-- DRAFT: needs author -->
-   `edits/README.md` — the file format, the target list, and how a fragment
-   that changed upstream is reviewed before it is applied again.
-5. `spec/40-update-pipeline.md` — how `analyze`/`update`/`apply` work, the
-   runbook of settings each machine needs, and the subagent model pin.
-6. `spec/30-durability.md` — the four layers that keep a CC update from
-   silently reverting the tranche, and the tripwire that reports when one does.
-7. `spec/45-pre-merge-tweakcc-data.md` — the tweakcc pin, its trust gate, and
-   the per-machine clone inventory.
-8. <!-- DRAFT: needs author -->
-   `tools/README.md` — every tool in one table, and `status --delivered`, which
-   shows the prompt each model is actually handed without sending anything to
-   the API.
-9. <!-- DRAFT: needs author -->
-   `spec/20-probe-battery.md` — nine probes, run once against stock Claude Code
-   and then retired: Claude judging Claude was not helpful, and it cost too
-   many tokens. What replaced them is the operator living with the patched
-   binary, with new complaints as the measurement.
-
-## Licence
-
-MIT (`LICENSE`), covering the specs, the edits' authored text and the tools;
-it does not cover Anthropic's prompt text or any stock wording quoted inside
-them, and it does not cover tweakcc, which is MIT from Piebald-AI.
+Built on [tweakcc](https://github.com/Piebald-AI/tweakcc).
+No affiliation with Anthropic.
+[MIT](LICENSE) covers the authored specs, edits and tools; it does not license
+Anthropic's text. See [About this repository](ABOUT-THIS-REPOSITORY.md) for scope.
