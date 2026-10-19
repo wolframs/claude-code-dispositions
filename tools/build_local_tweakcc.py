@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Build the pinned tweakcc checkout with this repo's temporary source overlay.
+"""Build the pinned tweakcc checkout, with an overlay only when selected.
 
 The upstream checkout is restored before this script exits. Only ignored build
-output in ``dist/`` remains, then ``patch_tweakcc.py`` adapts that output for
-Claude Code's code-split Bun module graph.
+output in ``dist/`` remains. Upstream 4.4 supports the native module graph;
+the legacy overlay path alone runs ``patch_tweakcc.py`` afterwards.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -17,51 +18,22 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-# PR 1005's head (prompt data through CC 2.1.278), reviewed under spec/45's
-# trust gate on 2026-09-20: official-repo branch, MEMBER author, one added
-# generated file, parent is main's merged PR 1003. `git diff 2a4ac735 f5aaf1e7
-# -- . ':(exclude)data/prompts'` is EMPTY, as it was for every previous pin
-# move — the commits between pins add nothing but generated prompt maps, and
-# TWEAKCC ITSELF IS UNCHANGED at 4.3.3.
-#
-# PR 1005 has since MERGED upstream as `54048e9`, and the pin still does not
-# move: the merge was a squash, so `f5aaf1e` is not an ancestor of `main` and
-# this builder compares SHAs exactly. What was checked instead — independently
-# on all three machines' own clones — is that the pin's tree and `main`'s are
-# the same object (`6a2fac35`) and that `main` publishes the reviewed blob
-# (`68eab8bd`). Reach the pin with `git fetch origin pull/1005/head`; do NOT
-# `git switch --detach origin/main`. See spec/45, "After upstream merges".
-#
-# The OVERLAY is the thing that adapts to the CC bundle, not to upstream
-# tweakcc. `diff 4.3.3-cc-2.1.261.patch 4.3.3-cc-2.1.268.patch` is not empty
-# because 2.1.268 changed the third declarator of the model-list function the
-# 2.1.261 anchor matched and took the custom-model menu down with it. The
-# 2.1.270 overlay also repairs session-memory gate locators and uses
-# replacer callbacks to preserve dollar signs in captured minified names; the
-# .273, .278 and .280 overlays are identical in content to it, because the
-# patched code structures did not move across those releases — only minified
-# names. The .283 overlay adds two locators: the session-memory gate grew a
-# trailing bypass conjunct, and opusplan's native 1M branch was hoisted into
-# its own declarator (notes/2026-09-28-win32-2.1.283.md). The .284 overlay is
-# identical in content to .283's (notes/2026-09-29-win32-2.1.284.md).
-# The .294 overlay adds one agentsMd locator: 2.1.293 gave the CLAUDE.md
-# reader a fifth parameter, a read hook (notes/2026-10-08-win32-2.1.294.md).
-# The filename is the coverage record `ccctl.py analyze` reads; the build
-# below tests those repairs before adapting the generated bundle.
-#
-# The values live in release.json (`tweakcc.commit`, `tweakcc.version`,
-# `tweakcc.overlay`) so that the build pin, the reviewed prompt map and the A/B
-# generator cannot drift apart; move the pin there, not here.
+# release.json owns the exact source pin and optional overlay. Since upstream
+# 4.4.0 the reviewed build uses its native module graph with no source or dist
+# adaptation. Older overlays and patch_tweakcc.py remain historical build
+# support; their release.json selects them explicitly. See spec/45 and
+# notes/2026-10-12-win32-fleet-catchup.md for the transition.
 RELEASE = json.loads((ROOT / "release.json").read_text(encoding="utf-8"))
 EXPECTED_SHA = RELEASE["tweakcc"]["commit"]
 EXPECTED_VERSION = RELEASE["tweakcc"]["version"]
-OVERLAY = ROOT / RELEASE["tweakcc"]["overlay"]
+OVERLAY = (ROOT / RELEASE["tweakcc"]["overlay"]
+           if RELEASE["tweakcc"].get("overlay") else None)
 
 
 def corepack_cmd() -> list[str]:
     """argv prefix that runs corepack.
 
-    corepack ships inside every node distribution, but a machine that links only
+    Some node distributions include corepack, but a machine that links only
     node/npm/npx into its bin directory (macOS here: ~/.local/bin -> ~/.hermes/node)
     has no ``corepack`` on PATH. Resolve it beside the *real* node before falling
     back to the bare name, so the failure — if any — is corepack's own.
@@ -145,13 +117,17 @@ def verify_checkout(clone: Path) -> None:
             "tweakcc has tracked source changes; preserve or revert them before "
             f"building:\n{dirty}"
         )
-    git(clone, "apply", "--check", "--ignore-space-change", str(OVERLAY))
+    if OVERLAY:
+        git(clone, "apply", "--check", "--ignore-space-change", str(OVERLAY))
 
 
 def build(clone: Path, install: bool = True) -> None:
     verify_checkout(clone)
-    print(f"Applying temporary source overlay to {clone}")
-    git(clone, "apply", "--ignore-space-change", str(OVERLAY))
+    if OVERLAY:
+        print(f"Applying temporary source overlay to {clone}")
+        git(clone, "apply", "--ignore-space-change", str(OVERLAY))
+    else:
+        print(f"Building reviewed upstream tweakcc {EXPECTED_VERSION} at {EXPECTED_SHA}")
     try:
         if install:
             run([*COREPACK, "pnpm", "install", "--frozen-lockfile"], clone)
@@ -159,8 +135,9 @@ def build(clone: Path, install: bool = True) -> None:
         run([*COREPACK, "pnpm", "test"], clone)
         run([*COREPACK, "pnpm", "build"], clone)
     finally:
-        print("Restoring the upstream tweakcc source checkout")
-        git(clone, "apply", "-R", "--ignore-space-change", str(OVERLAY))
+        if OVERLAY:
+            print("Restoring the upstream tweakcc source checkout")
+            git(clone, "apply", "-R", "--ignore-space-change", str(OVERLAY))
 
     dirty = git(
         clone,
@@ -172,7 +149,8 @@ def build(clone: Path, install: bool = True) -> None:
     if dirty:
         raise RuntimeError(f"source checkout was not restored cleanly:\n{dirty}")
 
-    run([sys.executable, str(ROOT / "tools" / "patch_tweakcc.py"), str(clone / "dist")], ROOT)
+    if OVERLAY:
+        run([sys.executable, str(ROOT / "tools" / "patch_tweakcc.py"), str(clone / "dist")], ROOT)
     print("Local tweakcc build is ready; tracked upstream source is clean.")
 
 
@@ -189,11 +167,19 @@ def main() -> int:
         action="store_true",
         help="reuse the clone's existing pinned node_modules",
     )
+    parser.add_argument("--test-bun", type=Path,
+                        help="Bun executable for the optional native round-trip tests")
     args = parser.parse_args()
+    if args.test_bun:
+        compiler = args.test_bun.expanduser().resolve()
+        if not compiler.is_file():
+            raise RuntimeError(f"test Bun executable is missing: {compiler}")
+        os.environ["PATH"] = str(compiler.parent) + os.pathsep + os.environ.get("PATH", "")
     clone = args.clone.expanduser().resolve()
     if args.check:
         verify_checkout(clone)
-        print(f"OK: overlay applies cleanly to {clone} at {EXPECTED_SHA}")
+        print(f"OK: reviewed checkout at {EXPECTED_SHA}" +
+              (f", overlay applies cleanly to {clone}" if OVERLAY else ", no overlay selected"))
     else:
         build(clone, install=not args.skip_install)
     return 0

@@ -64,12 +64,16 @@ Anthropic's text ([`ABOUT-THIS-REPOSITORY.md`](ABOUT-THIS-REPOSITORY.md)).
 | --- | --- | --- | --- |
 | 👤 **Reader** | An unknown user who may need reassurance | An operator who ran the command and owns the consequences | `system-prompt-delivering-work-at-full-scope` |
 | 🚦 **Permission** | Confirm before acting | Reversible work inside the task is already authorized. Ask only for a commitment outside it | same |
+| 🔎 **Stopping points** | May hand back a finding that more investigation could resolve | Use the available context, tools and records to carry the authorized task forward | `system-prompt-delivering-work-at-full-scope` |
 | 📬 **Closing message** | An account of what was done | Where things stand first. What changed, what happens if nothing is done. How it was done stays out | `disposition-floor-under-every-output-style` |
 | 🔇 **Progress updates** | A reminder to say something after a run of silent tool calls | Switched off | `silent-turn-reminder-off` |
 | 🌿 **Commits** | Commit and push wait until the user asks | Committing finished work is part of the task. Someone else's repository still needs a go-ahead | `git-commit-authority` |
 | 🤝 **Delegation** | Late sections steer away from subagents | The parent may delegate. A subagent spawns further ones only on explicit opt-in | `delegation-override-cut`, `subagent-delegation-opt-in` |
 | 🩹 **Corrections** | Restraint, stated as a stack of don'ts | The same restraint stated once. A follow-up question is not a sign of an error | `system-prompt-correction-restraint` |
 | 📋 **TodoWrite** | Mechanics plus a mass of worked examples | The mechanics | `tool-description-todowrite` |
+
+On my own workload, Opus 5.5 has been noticeably more proactive with the
+current edits. This is an observation from daily use, not a benchmark.
 
 <!-- DRAFT: needs author -->
 ## Quick start
@@ -86,8 +90,9 @@ cp edits/system-prompt-*.md edits/tool-description-*.md ~/.tweakcc/system-prompt
 tweakcc --apply
 ```
 
-**Install everything with `ccctl.py`.** It needs git, node with tweakcc 4.3.3
-or newer, and Claude Code's native install:
+**Install everything with `ccctl.py`.** It needs git, Node, tweakcc and
+Claude Code's native install. `release.json` pins the reviewed tweakcc build
+and Claude Code compatibility checkpoint:
 
 ```sh
 mkdir ~/ccctl && cd ~/ccctl            # config, snapshots and changelog live here
@@ -183,8 +188,8 @@ The rest of the change is text tweakcc does not extract, such as the reporting
 floor under every output style and the Bash tool's compact git section
 (`spec/00` §2.3), and gates rather than text, such as the model clauses of the
 silent-turn reminder. Those are adhoc patches, and only `ccctl.py` applies
-them. On Windows, `tweakcc --apply` did not write fragments when this was built
-(`spec/40`); use `ccctl.py` there.
+them. Use `ccctl.py` for the complete patch set on every platform; the exact
+tweakcc build and any historical adaptations are documented in `spec/45`.
 
 **Apply with `ccctl.py`.** It patches a staged copy and swaps it in only after
 every marker verifies; the live binary is never edited in place. `apply` pulls

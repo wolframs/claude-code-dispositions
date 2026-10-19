@@ -6,9 +6,40 @@ not permission to guess prompt fragments or to force a MANUAL analysis. The
 source of truth remains prompt data prepared by tweakcc; this procedure uses
 an in-review contribution from a trusted upstream maintainer before merge.
 
-## Current build pin (2026-09-20, merge-verified 2026-09-21)
+## Current build pin (2026-10-19)
 
-`release.json` pins **`f5aaf1e`** (`fetchRef` `pull/1005/head`), which carries
+`release.json` selects upstream tweakcc 4.4.0 at the exact release merge
+commit, with `overlay: null`. Its native module writer replaces the source
+and dist adaptations. `build_local_tweakcc.py` still checks the exact SHA,
+cleanliness, package version, lint, tests and production build; it skips both
+legacy adaptation passes when no overlay is selected.
+
+The first Windows trial exposed ccctl reading retained, unreachable module
+source as live. The module-table repair, repeat staged build and delivered
+capture are in [the catch-up note](../notes/2026-10-12-win32-fleet-catchup.md).
+`verifiedCcVersion` records the CC release measured with this upstream build;
+a newer target is advisory UNPROVEN until a staged build earns that extension.
+Historical overlays remain build provenance and are selected only by an older
+release checkpoint. Do not apply `patch_tweakcc.py` to the current build.
+
+Windows 2.1.303 uses this same source pin, with prompt data from official
+maintainer PR 1047 under the trust gate below. Its staged feature pass works
+after seeding tweakcc's backup from the target pristine; see
+[the 2.1.303 round](../notes/2026-10-19-win32-2.1.303.md). After PR 1047 merges,
+compare its published map with the blob in `release.json` before replacing any
+cache entry. TODO's machine table distinguishes the last recorded Linux/macOS
+verification from the operator's newer approximate version reports.
+
+**Mac native test compiler:** its normal Bun 1.3.13 emits an invalid signature
+for the untouched test fixture. The private, checksum-verified Bun 1.3.14
+compiler is selected with `--test-bun ~/ccctl/toolchains/bun-1.3.14/bun`.
+It leaves the general runtime alone. Retain it until the normal compiler
+passes upstream's native round-trip tests; that agent then removes the
+private compiler. Evidence and the failed 1.4.3 trial are in the catch-up note.
+
+## Historical pin: 2026-09-20, merge-verified 2026-09-21
+
+The previous checkpoint pinned **`f5aaf1e`** (`fetchRef` `pull/1005/head`), which carried
 prompt data for CC 2.1.278. Taken pre-merge on 2026-09-20; the trust gate that
 day read head repository `Piebald-AI/tweakcc`, author association MEMBER, one
 added generated file (`data/prompts/prompts-2.1.278.json`, blob
@@ -25,8 +56,7 @@ trees, so — per "After upstream merges" — **nothing moves**: the pin stays a
 `f5aaf1e`, builds keep going through `build_local_tweakcc.py`, and the
 prompt-data cache entry is now simply the normal one. `fetchRef` is still
 required for another machine to reach the pin, because the merge was a squash
-and `f5aaf1e` is not an ancestor of `main`. Nothing else has landed on `main`
-since.
+and `f5aaf1e` is not an ancestor of `main`. This was the state on 2026-09-21.
 
 **Re-run independently on win32's own clone, 2026-09-21** — a tree equality
 asserted in one session is not a fact on another machine's disk. Same two
@@ -34,11 +64,25 @@ trees (`6a2fac35`), same published blob (`68eab8bd`), and the seeded cache
 entry's `git hash-object` round-trips to it, so Windows' CRLF conversion stayed
 out of the file. All three machines have now built from this pin (macOS 2026-09-22).
 
-**CC 2.1.294 (2026-10-08) runs on a carried-forward map** (below): tweakcc
-`main`'s 2.1.292 map, because no map or PR for 2.1.293/2.1.294 existed. Its
-overlay, `4.3.3-cc-2.1.294.patch`, is the .284 overlay plus one locator:
-2.1.293 gave the CLAUDE.md reader a fifth parameter (a read hook), which the
-`agentsMd` patch did not match (`notes/2026-10-08-win32-2.1.294.md` §4).
+**CC 2.1.296 (2026-10-09) used this procedure for its prompt data only**, as
+2.1.284 did. PR 1036 (`af6c1a6d`, head repository `Piebald-AI/tweakcc`,
+MEMBER, one unsigned commit on `main`'s `98067e99`, one added file, blob
+`4b490837`) passed the gate and seeded the cache; `release.json` records it.
+The source pin did not move in that round. PR 1036 merged; the 2026-10-12
+comparison found the published blob identical, so the seed needs no replacement. Its overlay,
+`4.3.3-cc-2.1.296.patch`, is the .294 overlay under a new name: tweakcc's
+per-patch results on 2.1.296 equal 2.1.294's line for line
+(`notes/2026-10-09-linux-2.1.296.md`).
+
+**`main` has had its own code-split support since 2026-10-09** (PR 1034,
+`0c99d110`). The earlier pin predated it; the 2026-10-12 reviewed pin now uses it directly.
+
+**CC 2.1.294 (2026-10-08) ran on a carried-forward map** (below) until
+upstream published its own on 2026-10-09: tweakcc `main`'s 2.1.292 map,
+because no map or PR for 2.1.293/2.1.294 existed. Its overlay,
+`4.3.3-cc-2.1.294.patch`, is the .284 overlay plus one locator: 2.1.293 gave
+the CLAUDE.md reader a fifth parameter (a read hook), which the `agentsMd`
+patch did not match (`notes/2026-10-08-win32-2.1.294.md` §4).
 
 **CC 2.1.284 (2026-09-29) used this procedure for its prompt data only.** PR
 1016 (`190065c4`, head repository `Piebald-AI/tweakcc`, MEMBER, one unsigned
@@ -177,13 +221,14 @@ tweakcc --version
 Read tweakcc's `AGENTS.md` before building. At the 2.1.257 exercise the stated
 development baseline was Node 24 and pnpm 11.0.9 or newer; Node 24.19 and pnpm
 11.25 completed lint, 532 tests (5 skipped), and the production build.
-`build_local_tweakcc.py` pins and checks the reviewed SHA, temporarily applies
-this repository's version-specific overlay, runs install/lint/test/build,
-reverses the overlay, verifies that the upstream checkout is clean, then adapts
-the built `dist/` for the current Bun blob format. Use it instead of manually
-applying the overlay. It is deliberately exact-versioned: when a future release
-changes tweakcc or Claude Code, derive and test a new overlay rather than forcing
-this one. `npm install --global <local-path>` warned
+`build_local_tweakcc.py` pins and checks the reviewed SHA, runs
+install/lint/test/build and verifies that the upstream checkout stays clean.
+An older checkpoint with an overlay also applies and reverses that overlay
+and adapts its built `dist/`; the current upstream checkpoint does neither.
+Use the builder rather than applying adaptations by hand. When a future
+release changes tweakcc or Claude Code, verify the upstream writer first;
+derive an overlay only for a repair upstream still lacks.
+`npm install --global <local-path>` warned
 that prepare/Husky scripts were not allowed, but this was harmless because
 `pnpm build` had already populated `dist/`.
 
@@ -319,8 +364,10 @@ gate is not a locator.** Diff the deciders as well as the text.
 
 On code-split Claude Code releases (2.1.243 and later), do not accept a stale
 optional-feature patcher merely because prompt extraction succeeded. First
-derive a module-local locator from the exact release, add it to the checked-in
-overlay, and prove it against the local build. For 2.1.257 the overlay repaired
+derive a module-local locator from the exact release and prove the repair
+against the reviewed local build. When a historical checkpoint selects an
+overlay, carry that repair in its overlay; the current upstream route needs
+no legacy adaptation. For 2.1.257 the overlay repaired
 all applicable optional patchers and `ccctl.py apply --no-pull` verified the
 tweakcc banner plus every marker this repository had at the time. The fallback remains a
 safety net only when a local repair is genuinely impossible; record why and
@@ -335,9 +382,9 @@ prompt cache on the machine that needs the early update.
 
 | Machine | Endpoint | Clone path | State, each row verified on its own date |
 | --- | --- | --- | --- |
-| Win11 work laptop | local | `[WINDOWS_HOME]\repos\tweakcc` | **2026-10-08:** reviewed pin unchanged at `f5aaf1e`; rebuilt with the .294 overlay (one new `agentsMd` locator), tracked source clean; the 2.1.294 patch set applied with the same per-patch results as 2.1.284. Evidence: `notes/2026-10-08-win32-2.1.294.md`. |
-| Kubuntu 26.04 workstation | remote | `[USER_HOME]/apps/tweakcc` (`~/apps/tweakcc`) | **2026-10-08:** reviewed pin unchanged at `f5aaf1e`; rebuilt with the .294 overlay, tracked source clean; the 2.1.294 patch set applied with the same per-patch results as 2.1.284, `✓ AGENTS.md` included. Evidence: `notes/2026-10-08-linux-2.1.294.md`. |
-| macOS 26 MacBook Air | remote | `[USER_HOME]/apps/tweakcc` (`~/apps/tweakcc`) | **2026-10-08:** reviewed pin unchanged at `f5aaf1e`; rebuilt with the .294 overlay, tracked source clean; the 2.1.294 patch set applied with the same per-patch results as 2.1.283, `✓ AGENTS.md` included. Evidence: `notes/2026-10-08-macos-2.1.294.md`. |
+| Win11 work laptop | local | `[WINDOWS_HOME]\repos\tweakcc` | **2026-10-12:** reviewed upstream 4.4.0, exact pin from `release.json`, tracked source clean; build and live apply/delivered checks passed. Evidence: `notes/2026-10-12-win32-fleet-catchup.md`. |
+| Kubuntu 26.04 workstation | remote | `[USER_HOME]/apps/tweakcc` (`~/apps/tweakcc`) | **2026-10-12:** reviewed upstream 4.4.0, exact pin from `release.json`, tracked source clean; build and live apply/delivered checks passed. Evidence: `notes/2026-10-12-win32-fleet-catchup.md`. |
+| macOS 26 MacBook Air | remote | `[USER_HOME]/apps/tweakcc` (`~/apps/tweakcc`) | **2026-10-12:** reviewed upstream 4.4.0, exact pin from `release.json`, tracked source clean; build and live apply/delivered checks passed. Evidence: `notes/2026-10-12-win32-fleet-catchup.md`. |
 
 On Windows, `.work/tweakcc-dev` is a sandbox artifact owned by another SID,
 not the deployment clone listed above.
@@ -374,6 +421,6 @@ the earlier candidate.
 The cache file may remain either way: once upstream publishes the identical
 data it is just the normal cache entry.
 
-Only when no overlay covers the current CC version and tweakcc's published
-release carries the fix, go back to an ordinary install
-(`npm install --global tweakcc`, or a plain build of `main`).
+The current build took the reviewed upstream route after staged and delivered
+verification (above). Keep an exact source pin; a moving `main` is not a
+reviewed build. Published installs still need the same staged checks.

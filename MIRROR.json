@@ -1,16 +1,16 @@
 {
-  "excluded_files": 2366,
+  "excluded_files": 9656,
   "file_counts": {
     "add": 1,
     "copy": 7,
     "override": 1,
-    "redact": 118
+    "redact": 128
   },
   "manifest_name": "claude-code-dispositions",
-  "manifest_sha256": "65d33871b2084bab78673084be2fba14933d1a52601021c2a65d7498f5e037cb",
+  "manifest_sha256": "f41b6d3f673f1d2599c76db461fce1e9ed541f0db240b647f52e02fa88361353",
   "open_reviews": 0,
-  "source_commit": "cf8c79e9e0ac505782297e30e0a8d3a9a83ea2dc",
-  "staged_files": 127,
+  "source_commit": "3ae76259ed198872c30f56206400c0788982f999",
+  "staged_files": 137,
   "tool_version": "1",
   "unclassified_files": 0
 }

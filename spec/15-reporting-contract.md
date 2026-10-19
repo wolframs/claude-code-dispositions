@@ -438,8 +438,9 @@ reading dates or fields that were already in the corpus. The complaints carry a
 **Caveat on the numbers.** Two independent passes over the same question
 disagreed on at least one turn (HT-582), because one walked back to the nearest
 preceding assistant record and the other took the session's last model. The
-*split* is solid; per-turn attribution needs the careful method, and TODO item 15
-is where that gets done properly.
+*split* is solid; per-turn attribution needs the careful method, and it was
+never done: TODO item 15, which asked for it, was retired on 2026-10-10
+(`notes/archive/TODO-closed-2026-10-10.md`).
 
 ### 5.1 Routing — and the reason none of this reached him
 
@@ -797,8 +798,10 @@ of the last; the deployed bytes are in `ab/data.json`):
 | "what changed and what it touched: which repos, which remotes, which live systems" | 1 — repair | AMA: *"a short description of the change and which repos, remotes and, if applicable, systems were touched"*. | Does the reply name every repo, remote (and whether it was pushed) and live system the turn touched, and nothing about how? |
 | "as one-line bullets, what happens if they do nothing — each one a consequence, not an explanation, and none carrying the fix" | 1 — repair | AMA: *"terse bullets that don't necessarily explain the underlying situation but the consequences if I don't act"*. Replaces the 09-21 category keep-list, whose "with the output" invited the account behind each item. | Is each bullet one line, a consequence of inaction, with no cause story and no remedy? |
 | "Suggestions and offers come last, where they can be skipped, and as statements, not questions" | 1 — repair | AMA: *"consequences only, and any suggestions were offered towards the end"*. The statement form is for CC's session-state classifier (§5.5). | Does any suggestion or offer appear before the last bullet, or end in a question mark? |
+| "An offer is for work outside what the task already authorizes; a step inside it is started, and the message says it is running" | 1 — repair | 2026-10-11, C-10: the slot drained the C-07 licence. Claude's own account in `glass365-1/76435928` turn 361: *"A format with a fixed slot invites something to fill it, and "I can do X" fits perfectly … The closing format usually wins, because it is concrete and sits exactly where the decision gets written."* | Does a closer end with an offer to do something the delivery fragment already authorizes? |
 | "How the work was done, checked or diagnosed is not in the message: a turn of fifty tool calls …" | 1 — repair | The 09-25 recount: closers of 200–400 words narrating verification. A default, not a cap: "they will ask" still follows it. | Does the report's length track the turn's length rather than what changed? |
 | "When the ask was to find out, the analysis is the answer; when it was to fix, … `reports/` … and most turns need none" | 2 — outlet | AMA: *"`reports/` is probably a better to-be-created subdir if the need arises. That should not lead to a ton of output tokens being spent on reports by default though."* Without an outlet, the pull to explain lands in the closer. | On a fix ask, is there an analysis in the reply? Is there a report the turn did not need? |
+| "the analysis is the answer, and a check it calls for inside the task is under way, not offered" | 1 — repair | 2026-10-11, C-10: *""How severe are the problems" was a find-out question. Doing the 30-minute check unasked would have looked like scope creep under that rule."* (same turn). The AMA's outlet clause is unchanged; this names what the analysis may not stop. | On a find-out ask whose answer names a check inside the task, is the check running when the reply lands? |
 | "They will ask for detail when it matters to them" | 2 — the legal exit (spec/00 §7.1) | HT-568, in his words. When he asks, the detail is the answer. | — |
 | "For the pane: short sentences, a thought per short paragraph, a blank line between them. A bullet is one line. Bold marks a word worth finding …" | 1 — repair | 2026-10-08: *"the lack of line-breaks WITHIN paragraphs is my biggest gripe"*; the 09-25 form sentence left 3–5-line paragraphs and bold leads on bullets that carried a paragraph each (§5.6). | Does any paragraph run past three lines in an 80-column pane? Does any bullet wrap, or open with a bold label followed by more than a clause? |
 
@@ -812,6 +815,17 @@ Two sentences in this paragraph run past the 25-word limit (34 and 40 words,
 the method and outlet sentences); the wording settled after the AMA was kept
 over the limit. The change grew the floor from 1,591 to 1,888 characters; the
 §5.5 statement clause took it to 1,922.
+
+**2026-10-11 (C-10, TODO 48): the slot is told what it is for.** The two
+clauses above re-price the offers slot and the find-out clause so that neither
+can hold a step the delivery fragment already authorizes. They were drafted
+from the transcript, not from a reader's summary: in the 10-02 session the
+floor's own words were the layer Claude named as winning over "already
+authorized", and the operator's reaction was "what happened to the "proactive"
+setting in claude code, wtf". The operator's `~/.claude/CLAUDE.md` on win32
+repeats the old offers sentence as a rule of its own; that file is his and is
+not changed here. Falsifier for the pair: a closer that ends with an offer to
+do authorized work, or a find-out reply whose named check is not under way.
 
 ### 5.5 Stock lines that pulled against the contract (2026-09-25 audit)
 
@@ -866,6 +880,17 @@ Footprint and bullets are now counted in lines ("a few short lines",
 inventory of form-steering layers that this round read is
 `notes/evidence/2026-10-08-output-style-inventory.md`; the decisions are in
 `notes/2026-10-08-reply-form.md`.
+
+### 5.7 Preserving the reviewed bundle on CC 2.1.303
+
+The `temporal_hare` experiment selects an alternate system and tool prompt
+bundle before the patched fragments. `lean-rewrite-off` disables its shared
+predicate for both host caches, including compiled-only and client-data arms.
+This restores the existing reviewed bodies rather than authoring replacements
+for every alternate fragment. The reporting floor now appends outside the
+context-management body's conditional. The writing-style cut retains its early
+return despite the new rewrite guard. Evidence and the release-wide gate read:
+[Windows 2.1.303](../notes/2026-10-19-win32-2.1.303.md).
 
 ## 6. What is deliberately not installed
 

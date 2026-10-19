@@ -1,14 +1,14 @@
-# Draft payload — the text that would actually be installed
+# Delivery payload — active source and revision history
 
-Status: **second draft, untested.** v1 (641 chars) was written from two
-diagnosed complaints; v2 is re-weighted against the coded corpus — 177
-complaints, six dispositions (`notes/taxonomy/`, since archived: design
-provenance only, rejected as a metric — spec §10.1) — and C-03. Still written
-to be argued with.
+Status: **active revision history**. The deployed body is
+`edits/system-prompt-delivering-work-at-full-scope.md`; current installation
+state is TODO.md's machine table. The early drafts below are design evidence,
+not current instructions. Their coded-corpus source (`notes/taxonomy/`) was
+rejected as a metric (spec §10.1).
 
-Per §7.2 the installed disposition is budgeted under ~1500 characters and gets
-worse as it grows. This is the whole authored half of the project. The other
-half — larger by an order of magnitude — is deletions, and it adds no text.
+The original draft budget was ~1500 characters. Later revisions deliberately
+exceed it, with their costs recorded below; the pressure to remove redundant
+prose in §7.3 still applies. Deletions remain the larger half of the project.
 
 ---
 
@@ -97,6 +97,47 @@ already authorized", replacing the v4.4 marker. Stock unchanged 2.1.257
 through 2.1.268. All three machines have run v4.5 since 2026-09-14; the
 rollout was TODO item 25, closed and archived in
 notes/archive/TODO-closed-2026-09-14.md.)
+
+(v4.6, 2026-10-11, the three-machine read — three sentences, each a complaint
+entry read first-hand in the transcripts (`notes/complaints.md` C-11, C-12,
+C-13; `notes/2026-10-11-three-machine-read.md`). *A claim was looked at or is
+marked* (C-13): "A number, a cause, a location or a "done" in your reply is
+something you looked at this turn, or it is marked for what it is: a guess, a
+peer's claim, a file's claim" — spec/00 §6's row "No fabrication of results,
+files, or verification", listed since August as absent and "must be added",
+now added, as a marking rule rather than a prohibition. *The world half of
+§3.1 as a list* (C-12): the one sentence "The machine and the tree are shared
+with other sessions" became "The machine, the subscription window and the tree
+are theirs, shared with their other sessions: a fan-out spends their week, so
+weigh it like money; before the turn ends, nothing you started is still
+running unless you say so, and nothing finished sits uncommitted" — the 09-28
+twelve-became-nineteen fan-out, the leftovers of the fortnight, and spec §3.2's
+uncommitted-work bullet, which `git-commit-authority` already carries on the
+Bash side. *A remark is not a rule* (C-11), after the §5.1 prohibition: "What
+they say once is context, not a rule: keep it as what they said, with its
+date. A caution you adopt is yours; if you write it down, label it as your
+working choice, never as theirs, and it never becomes a question back to
+them" — the write side of C-09, seen in the live session filing its own gate
+into his `CLAUDE.md` and then obeying it as his. Body 3,065 characters of
+prose; the ceiling discussion in §7.3 stands and this is the deliberate cost
+again. Markers added: "marked for what it is", "weigh it like money", "A
+caution you adopt is yours". The operator delegated the wording ("you have
+the context, you have the vibes, you have the honors", 2026-10-11); applied on
+Linux the same evening with the sibling read-back in
+`notes/2026-10-11-linux-c10-c13.md`; win32 and macOS are TODO 48.)
+
+(v4.7, 2026-10-16, agentic habitat — replaces the v4.2 resource-ladder
+paragraph rather than stacking another autonomy rule onto it. The Windows
+and Mac screenshot sessions already carried task authority and Proactive;
+the Mac parent still handed back a concrete uncertainty without investigating
+it. The operator identified the missing premise: this is an agentic habitat
+from which the agent can obtain information, infer and act. The replacement
+applies to any contemplated stopping point, separates investigating an
+uncertain change from making it, and preserves completion, real dependencies
+and established protected boundaries as stopping grounds. Evidence,
+verbatim operator wording and deployment checks:
+[2026-10-16 habitat round](../notes/2026-10-16-agentic-habitat.md).
+The authored body remains in `edits/`; this history does not duplicate it.)
 
 (v4.3, 2026-08-25, C-06 — **proposed, then withdrawn the same session. The
 body is unchanged at 1,066 characters.** Worth keeping because the reasoning

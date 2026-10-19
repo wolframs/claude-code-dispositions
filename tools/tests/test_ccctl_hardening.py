@@ -142,7 +142,7 @@ check("antimarkers: the shipped ANTIMARKERS.txt parses and is non-empty",
 # --- finding 7: adhoc anchor ambiguity
 dup = (b"function aa(e){let t=bb()?.tengu_heron_brook;"
        b"function cc(e){let t=dd()?.tengu_heron_brook;")
-p = cc.plan_adhocs(dup)
+p = [i for i in cc.plan_adhocs(dup) if i['name'] == 'delegation-override-cut']
 check("finding7: duplicate adhoc anchor -> MANUAL",
       p[0]["status"] == "MANUAL" and "2x" in p[0]["reason"], str(p[0]))
 
@@ -340,7 +340,8 @@ check("2.1.280: an unowned shell selector is MANUAL, not a quiet skip",
       unowned_cut["status"] == "MANUAL", unowned_cut.get("reason", ""))
 check("shell block: the replaced run starts at the assignment target, not the backtick",
       shell.get("old", b"") == b"s=`" + shell_body + b"`", str(shell.get("old", b""))[:80])
-gate = cc.plan_adhocs(b"function $NIs(e){let t=$Uh()?.tengu_heron_brook;")[0]
+gate = {i['name']: i for i in cc.plan_adhocs(
+    b"function $NIs(e){let t=$Uh()?.tengu_heron_brook;")}['delegation-override-cut']
 check("2.1.245: $-prefixed identifiers still anchor the delegation cut",
       gate["status"] == "AUTO" and b"function $NIs(e){return null;" in gate.get("new", b""),
       gate.get("reason", ""))
@@ -475,6 +476,30 @@ check("2.1.268: only the one list entry is rewritten, siblings untouched",
 check("2.1.268: replacement stays ASCII, so latin-1 encoding cannot raise",
       section.get("new", b"").decode("latin-1").isascii())
 
+SECTION303 = b'mm(`context_management${w}`,()=>S?TLs:Vfr),'
+rewrite_floor = floor_of(SECTION303)
+check("2.1.303: floor follows the entire context-body choice",
+      rewrite_floor['status'] == 'AUTO'
+      and rewrite_floor['new'].startswith(b'mm(`context_management${w}`,()=>(S?TLs:Vfr)+')
+      and FLOOR_KEY in rewrite_floor['new'])
+check("2.1.303: duplicate rewrite sections refuse activation",
+      floor_of(SECTION303 * 2)['status'] == 'MANUAL')
+
+REWRITE303 = (b'function N(e){if(e===void 0)return!1;let n=qe(e),r=L_(n,"temporal_hare",e);'
+              b'if(r===!1)return!1;return r===!0}'
+              b'class W{leanRewrite=eo(N);leanRewriteCompiledOnly=eo(N)}')
+def rewrite_of(blob):
+    return {i['name']: i for i in cc.plan_adhocs(blob)}['lean-rewrite-off']
+rw = rewrite_of(REWRITE303)
+check("2.1.303: alternate bundle is disabled before any server arm",
+      rw['status'] == 'AUTO' and rw['new'].startswith(b'function N(e){return!1;if('))
+check("2.1.303: rewrite predicate must own both caches",
+      rewrite_of(REWRITE303.replace(b'CompiledOnly=eo(N)', b'CompiledOnly=eo(other)'))['status'] == 'MANUAL')
+check("2.1.303: duplicate rewrite predicates are MANUAL",
+      rewrite_of(REWRITE303 * 2)['status'] == 'MANUAL')
+check("older build: absent rewrite switch is NOOP",
+      rewrite_of(SECTION268)['status'] == 'NOOP')
+
 # 2.1.251..2.1.261 carry BOTH shapes. Applying both would install the floor
 # twice; the renderer keeps precedence because it still places the floor after
 # the style body, which the section shape cannot do.
@@ -527,6 +552,15 @@ check("willow_tern: absent section plans NOOP, not MANUAL",
       absent["status"] == "NOOP", absent.get("status", "") + " " + absent.get("reason", ""))
 check("willow_tern: a NOOP item carries no bytes to apply",
       "old" not in absent and "new" not in absent)
+
+WT303 = (b'function vfr(e){if(vae(e)||!pFs(e))return null;'
+         b'return i("tengu_willow_tern_applied",{fromClientData:wAo()===!0}),wfr}')
+wt303 = {i['name']: i for i in cc.plan_adhocs(WT303)}[WT]
+check("2.1.303: writing-style cut survives the extra rewrite guard",
+      wt303['status'] == 'AUTO'
+      and wt303['new'].startswith(b'function vfr(e){return null;if(vae(e)||!pFs(e))'))
+check("writing-style renderer with an unknown guard cannot silently become NOOP",
+      {i['name']: i for i in cc.plan_adhocs(WT303.replace(b'vae(e)||', b'other(e)&&'))}[WT]['status'] == 'MANUAL')
 
 # --- git-commit-authority (TODO 38). The stock sentence exists twice in a
 # real bundle: in the live template, followed by the `${` of the next
@@ -597,6 +631,12 @@ ac_reworded = {i["name"]: i for i in cc.plan_adhocs(
     AC_BUILDER.replace(b"say so with the output", b"say so, quoting the output"))}[AC]
 check("action-caution: a reworded clause is MANUAL",
       ac_reworded["status"] == "MANUAL", ac_reworded.get("status", ""))
+
+ac303 = AC_BUILDER.replace(b'(e){', b'(e,n=!1){').replace(b'return null;return"', b'return null;if(n)return cLs;return"')
+ac303_plan = {i['name']: i for i in cc.plan_adhocs(ac303)}[AC]
+check("2.1.303: action-caution keeps the alternate branch and rewrites only the stock clause",
+      ac303_plan['status'] == 'AUTO'
+      and ac303_plan['new'] == ac303_plan['old'].replace(cc.ACTION_CAUTION_STOCK, cc.ACTION_CAUTION_NEW.encode()))
 
 # --- bash-audience-note-result-not-output (item 30 audit). One string
 # literal; only its last sentence changes, and nothing outside the quotes.
@@ -827,6 +867,23 @@ try:
     bk.write_bytes(b"head " + MK[0].encode() + b" tail")
     check("backup: no markers means unknowable — leave it alone, do not guess",
           cc.park_patched_backup([]) is None and bk.exists())
+
+    pristine = tmp5 / 'stage.exe'
+    pristine.write_bytes(b'new pristine version')
+    bk.write_bytes(b'old pristine version')
+    old_stock = cc.refresh_tweakcc_backup(pristine, MK)
+    check("backup: staging a new release retains the previous backup and seeds the exact new pristine",
+          old_stock.read_bytes() == b'old pristine version' and bk.read_bytes() == pristine.read_bytes())
+    check("backup: an identical pristine does not create another backup",
+          cc.refresh_tweakcc_backup(pristine, MK) is None)
+    pristine.write_bytes(MK[0].encode())
+    try:
+        cc.refresh_tweakcc_backup(pristine, MK)
+        refused = False
+    except SystemExit:
+        refused = True
+    check("backup: a patched stage cannot poison the stock backup",
+          refused and bk.read_bytes() == b'new pristine version')
 finally:
     cc.TWEAKCC_DIR = _savedtw
     shutil.rmtree(tmp5, ignore_errors=True)
@@ -1382,8 +1439,8 @@ for args, want in cases:
 
 # --- 2026-09-25: a shadowing old tweakcc must not stop a non-interactive apply
 # Linux has a root-installed tweakcc 4.0.13 in /usr/bin and the operator's
-# 4.3.3 under the ~/.npmrc prefix, which only ~/.zshrc puts on PATH. In a
-# non-interactive shell the first on PATH was the old one and ccctl refused to run.
+# 4.3.3 under the ~/.npmrc prefix, which only ~/.zshrc puts on PATH. Over ssh
+# the first on PATH was the old one and ccctl refused to run.
 if sys.platform != "win32":
     import contextlib, io
     from unittest import mock

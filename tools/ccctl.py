@@ -568,16 +568,25 @@ def pe_bun_window(binary):
 
 
 def live_blob(binary):
-    """The live bundle's bytes (see bun_window), or the whole file when there
-    is no window. Offsets into the result are window-relative, which is all
-    the plan/apply path needs — it works in `old`/`new` byte strings, never in
-    absolute file offsets."""
-    window = bun_window(binary)
+    """Active module contents, excluding orphaned sources and cached bytecode.
+
+    Upstream tweakcc 4.4 appends changed sources and repoints their records;
+    the original bytes remain inside the live bundle. Only module records
+    establish reachability. Plans use old/new bytes, never these offsets.
+    Unparseable legacy bundles retain the window/whole-file fallback.
+    """
+    window, _why = bundle_window(binary)
     if not window:
         return Path(binary).read_bytes()
     with open(binary, "rb") as fh:
         fh.seek(window[0])
-        return fh.read(window[1] - window[0])
+        blob = fh.read(window[1] - window[0])
+    table = bun_table(blob)
+    if table is None:
+        return blob
+    return b"\n\0\n".join(blob[off + 8:off + 8 + length]
+                            for m in table["mods"]
+                            for off, length in [m["runs"][1]] if length)
 
 
 # ------------------------------------------------- code-split bundle writer
@@ -833,14 +842,19 @@ def bun_source_patch(target, old, new):
         # handles those and its path is the battle-tested one there
         return False, f"not code-split: {len(table['mods'])} modules"
 
-    if blob.count(old) != 1:
-        return False, f"old bytes occur {blob.count(old)}x in the bundle window — need exactly 1"
-    p = blob.index(old)                      # absolute in blob
+    hits = []
+    for i, module in enumerate(table["mods"]):
+        off, length = module["runs"][1]
+        start, end = off + 8, off + 8 + length
+        at = blob.find(old, start, end)
+        while at != -1:
+            hits.append((i, at))
+            at = blob.find(old, at + 1, end)
+    if len(hits) != 1:
+        return False, (f"old bytes occur {len(hits)}x in active module contents — need exactly 1; "
+                       "orphaned bytes and matches that straddle a module boundary do not count")
+    owner, p = hits[0]                      # absolute in blob
     ss, nruns = table["ss"], BUN_STRUCT_RUNS[table["ss"]]
-    owner = next((i for i, m in enumerate(table["mods"])
-                  if m["runs"][1][0] + 8 <= p < m["runs"][1][0] + 8 + m["runs"][1][1]), None)
-    if owner is None:
-        return False, "old bytes are not inside any module's contents run"
     oco, ocl = table["mods"][owner]["runs"][1]
     if p + len(old) > oco + 8 + ocl:
         return False, "old bytes straddle a module boundary — mis-anchor"
@@ -985,18 +999,21 @@ def open_for_write_retrying(path, attempts=10, delay=1.0):
 
 
 def binary_contains(binary, needles, live=True):
-    """Which of `needles` occur literally in the binary. Chunked, overlap-safe.
-    `live=True` confines the search to the live bundle window, which is what
+    """Which of `needles` occur literally in the binary.
+    `live=True` confines the search to active module contents, which is what
     every question about our patched text wants. Pass live=False to ask about
     the file as a whole — "is this a CC binary at all", "is this byte-for-byte
     free of our markers" — where a hit anywhere is the honest answer."""
     if not needles:
         return set()
+    if live:
+        blob = live_blob(binary)
+        return {n for n in needles if n.encode("utf-8") in blob}
     needles = [n.encode("utf-8") for n in needles]
     found = set()
     overlap = max((len(n) for n in needles), default=0)
     tail = b""
-    window = bun_window(binary) if live else None
+    window = None
     remaining = window[1] - window[0] if window else None
     with open(binary, "rb") as fh:
         if window:
@@ -1375,6 +1392,31 @@ def plan_adhocs(blob):
     the block" when the prose was byte-identical — a false MANUAL that only
     a hand-grep of the binary could clear."""
     plan = []
+    # 2.1.303's temporal_hare experiment selects alternate system/tool bodies
+    # before our fragments. Both host caches use this one predicate. Disable
+    # it at the source, including compiled-only/client-data arms (spec/15).
+    item = {"name": "lean-rewrite-off", "kind": "adhoc"}
+    rewrites = list(re.finditer(
+        rb'function ([\w$]+)\(e\)\{if\(e===void 0\)return!1;let ([\w$]+)=[\w$]+\(e\),'
+        rb'[\w$]+=[\w$]+\(\2,"temporal_hare",e\);', blob))
+    if len(rewrites) == 1:
+        m = rewrites[0]
+        fn = re.escape(m.group(1))
+        caches = re.search(rb'leanRewrite=([\w$]+)\(' + fn
+                           + rb'\);leanRewriteCompiledOnly=\1\(' + fn + rb'\)', blob)
+        if caches:
+            old = m.group(0)
+            new = old.replace(b'{if(e===void 0)', b'{return!1;if(e===void 0)', 1)
+            item.update(status="AUTO", old=old, new=new)
+        else:
+            item.update(status="MANUAL", reason="temporal_hare predicate is not the shared leanRewrite cache source",
+                        fix="trace both leanRewrite caches before disabling the alternate prompt bundle")
+    elif rewrites or b'temporal_hare' in blob or b'leanRewriteCompiledOnly' in blob:
+        item.update(status="MANUAL", reason=f"lean rewrite predicate matches {len(rewrites)}x",
+                    fix="trace temporal_hare and both leanRewrite caches; alternate bodies must not bypass our fragments")
+    else:
+        item.update(status="NOOP", reason="no lean rewrite switch in this build")
+    plan.append(item)
     item = {"name": "delegation-override-cut", "kind": "adhoc"}
     m1s = list(re.finditer(rb"function ([\w$]+)\(e\)\{let t=([\w$]+)\(\)\?\.tengu_heron_brook;", blob))
     # 2.1.257 split this into three adjacent dynamic sections: an Opus-5
@@ -1644,10 +1686,12 @@ def plan_adhocs(blob):
         "which live systems. Then, as one-line bullets, what happens if they do nothing "
         "\\u2014 each one a consequence, not an explanation, and none carrying the fix. "
         "Suggestions and offers come last, where they can be skipped, and as statements, "
-        "not questions. How the work was "
+        "not questions. An offer is for work outside what the task already authorizes; a "
+        "step inside it is started, and the message says it is running. How the work was "
         "done, checked or diagnosed is not in the message: a turn of fifty tool calls "
         "that ended well is reported in the same few lines as a turn of two. When "
-        "the ask was to find out, the analysis is the answer; when it was to fix, an "
+        "the ask was to find out, the analysis is the answer, and a check it calls for "
+        "inside the task is under way, not offered; when it was to fix, an "
         "analysis worth keeping goes in `reports/` in the active repo with one line "
         "pointing at it \\u2014 and most turns need none. They will ask for detail when "
         "it matters to them.\\n\\n"
@@ -1825,6 +1869,11 @@ def plan_adhocs(blob):
                            rb"return ([\w$]+)\(e\.name,e\.prompt\)\}", blob))
     m5c = ident_led(rb'([\w$]+)\("context_management",\(\)=>([\w$]+)\),', blob,
                     b'("context_management",()=>')
+    # 2.1.303 keys this section by the rewrite suffix and selects its body.
+    # Append outside the choice, so the floor is unconditional on both paths.
+    m5r = ident_led(
+        rb'([\w$]+)\(`context_management\$\{[\w$]+\}`,\(\)=>'
+        rb'([\w$]+\?[\w$]+:[\w$]+)\),', blob, b'(`context_management${')
     if len(m5s) == 1:
         fn = m5s[0].group(1).decode()
         old5 = m5s[0].group(0)
@@ -1843,10 +1892,15 @@ def plan_adhocs(blob):
         old5 = m5c[0].group(0)
         new5 = (f'{sec}("context_management",()=>{body}+"\\n\\n"+"{FLOOR}"),').encode("latin-1")
         item.update(status="AUTO", old=old5, new=new5)
+    elif len(m5r) == 1:
+        old5 = m5r[0].group(0)
+        body = m5r[0].group(2)
+        new5 = old5.replace(b'=>'+body, b'=>('+body+b')+"\\n\\n"+"'+FLOOR.encode("latin-1")+b'"', 1)
+        item.update(status="AUTO", old=old5, new=new5)
     else:
         item.update(status="MANUAL",
                     reason=f"output-style floor anchor matches {len(m5s)}x inline / "
-                           f"{len(m5n)}x delegating / {len(m5c)}x section-list — "
+                           f"{len(m5n)}x delegating / {len(m5c)}x section-list / {len(m5r)}x rewrite-list — "
                            "expected exactly 1 of one shape",
                     fix="upstream changed how the selected output style reaches the prompt; "
                         "re-derive against the shared section list — either the style renderer "
@@ -1939,18 +1993,21 @@ def plan_adhocs(blob):
     # nothing wrong. This is the only target in the tranche whose correct
     # state can be "not present".
     item = {"name": "willow-tern-writing-style-cut", "kind": "adhoc"}
-    m6s = list(re.finditer(rb"function ([\w$]+)\(e\)\{if\(!([\w$]+)\(e\)\)return null;"
+    m6s = list(re.finditer(rb"function ([\w$]+)\(e\)\{if\((?:[\w$]+\(e\)\|\|)?!([\w$]+)\(e\)\)return null;"
                            rb'return ([\w$]+)\("tengu_willow_tern_applied"', blob))
     if len(m6s) == 1:
         fn, gate, tel = (g.decode() for g in m6s[0].groups())
         old6 = m6s[0].group(0)
-        new6 = (f'function {fn}(e){{return null;if(!{gate}(e))return null;'
-                f'return {tel}("tengu_willow_tern_applied"').encode("latin-1")
+        new6 = old6.replace((f'function {fn}(e){{').encode(),
+                           (f'function {fn}(e){{return null;').encode(), 1)
         item.update(status="AUTO", old=old6, new=new6)
     elif m6s:
         item.update(status="MANUAL", reason=f"willow_tern renderer matches {len(m6s)}x — ambiguous",
                     fix="the section renderer is duplicated in this build; inspect the unpacked JS "
                         "and decide which occurrence(s) to cut")
+    elif b'tengu_willow_tern_applied' in blob:
+        item.update(status="MANUAL", reason="willow_tern renderer exists but its guard changed",
+                    fix="trace the writing-style renderer and restore its unconditional early return")
     else:
         item.update(status="NOOP",
                     reason="no willow_tern section in this build — nothing to suppress")
@@ -2062,7 +2119,8 @@ def plan_adhocs(blob):
     # replacement is 8 bytes longer; the writer takes length changes (as
     # git-commit-authority's does), so nothing is padded.
     item = {"name": "action-caution-outcome-line", "kind": "adhoc"}
-    m9s = list(re.finditer(rb'function [\w$]+\(e\)\{if\(![\w$]+\(e\)\)return null;return"'
+    m9s = list(re.finditer(rb'function [\w$]+\(e(?:,n=!1)?\)\{if\(![\w$]+\(e\)\)return null;'
+                           rb'(?:if\(n\)return [\w$]+;)?return"'
                            + re.escape(ACTION_CAUTION_HEAD) + rb'(?:[^"\\]|\\.){0,1200}?'
                            + re.escape(ACTION_CAUTION_STOCK), blob))
     if len(m9s) == 1 and blob.count(m9s[0].group(0)) == 1:
@@ -2574,6 +2632,27 @@ def tweakcc_build_state(cfg, target):
     inv = overlay_inventory(cfg)
     twk = run([*tweakcc_node(), "--version"]).stdout.strip()
     build = str(repo_dir(cfg) / "tools" / "build_local_tweakcc.py")
+    selected = load_json(repo_dir(cfg) / "release.json", {}).get("tweakcc", {})
+    if selected.get("verifiedCcVersion") and not selected.get("overlay"):
+        clone = tweakcc_clone()
+        head, dirty = clone_head(clone) if clone else (None, False)
+        pin, covered = selected.get("commit"), selected["verifiedCcVersion"]
+        common = {**blank, "clone": str(clone) if clone else None, "head": head,
+                  "pin": pin, "overlayCc": covered}
+        fix = (f"build the reviewed upstream checkout: git -C <clone> fetch origin main; "
+               f"git -C <clone> checkout --detach {pin}; python {build} <clone> --skip-install")
+        if dirty:
+            return {**common, "verdict": "dirty-clone", "line": "tweakcc checkout has tracked changes", "fix": fix}
+        if twk != selected.get("version") or (clone and head != pin):
+            return {**common, "verdict": "stale-clone",
+                    "line": f"tweakcc {twk} at {(head or 'published')[:7]} differs from reviewed "
+                            f"{selected.get('version')} at {pin}", "fix": fix}
+        if ver_key(target) > ver_key(covered):
+            return {**common, "verdict": "uncovered",
+                    "line": f"upstream tweakcc was verified on CC {covered}; target {target} is unproven",
+                    "fix": "run a staged build and delivered checks before extending verifiedCcVersion"}
+        return {**common, "verdict": "ok",
+                "line": f"reviewed upstream tweakcc {twk}, no overlay; verified on CC {covered}", "fix": None}
     if not inv:
         return {**blank, "verdict": "no-overlays",
                 "line": "no tweakcc overlays in this repo — nothing to check"}
@@ -2666,6 +2745,7 @@ PRUNE_KEEP = {
     "previous live binaries": 1,
     "pristine per version": 1,
     "parked patched tweakcc backups": 0,
+    "superseded stock tweakcc backups": 0,
 }
 
 
@@ -2683,6 +2763,9 @@ def parked_groups(markers):
             key=lambda p: p.stat().st_mtime, reverse=True)),
         ("parked patched tweakcc backups", sorted(
             TWEAKCC_DIR.glob("native-binary.backup.patched-*"),
+            key=lambda p: p.stat().st_mtime, reverse=True)),
+        ("superseded stock tweakcc backups", sorted(
+            TWEAKCC_DIR.glob("native-binary.backup.stock-*"),
             key=lambda p: p.stat().st_mtime, reverse=True)),
     ]
     return [(name, files) for name, files in groups if files]
@@ -2821,7 +2904,8 @@ def backup_is_patched(markers):
     if not bk.exists() or not markers:
         return None
     st = bk.stat()
-    key = f"{st.st_size}:{st.st_mtime_ns}:{hash(tuple(markers)) & 0xffffffff}"
+    marker_hash = hashlib.sha256("\n".join(markers).encode("utf-8")).hexdigest()
+    key = f"{st.st_size}:{st.st_mtime_ns}:{marker_hash}"
     state = load_json(STATE, {})
     cached = state.get("backupVerdict")
     if cached and cached.get("key") == key:
@@ -2830,6 +2914,48 @@ def backup_is_patched(markers):
     state["backupVerdict"] = {"key": key, "patched": patched}
     save_json(STATE, state)
     return patched
+
+
+def validated_restore_backup(version, markers):
+    """A staging backup is recovery only if it equals this version's pristine.
+
+    tweakcc can replace the backup before activation. Marker absence alone
+    would advertise an incoming release as recovery for the still-live one.
+    Cache equality against both files' identities; never execute the backup.
+    """
+    backup = TWEAKCC_DIR / "native-binary.backup"
+    if not markers or not backup.is_file():
+        return None
+    candidates = [p for d in versions_dirs()
+                  for p in (d / (version + ".stock"), d / version) if p.is_file()]
+    if not candidates:
+        return None
+    def identity(path):
+        stat = path.stat()
+        return [str(path.resolve()), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
+    key = [version, identity(backup), [identity(p) for p in candidates], markers]
+    state = load_json(STATE, {})
+    cached = state.get("restoreBackupVerdict", {})
+    if cached.get("key") == key:
+        return backup if cached.get("valid") else None
+    def digest_file(path):
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.digest()
+    digest = digest_file(backup)
+    valid = False
+    for candidate in candidates:
+        if candidate.stat().st_size != backup.stat().st_size:
+            continue
+        equal = digest_file(candidate) == digest
+        if equal and is_stock(candidate, markers):
+            valid = True
+            break
+    state["restoreBackupVerdict"] = {"key": key, "valid": valid}
+    save_json(STATE, state)
+    return backup if valid else None
 
 
 def park_patched_backup(markers):
@@ -2851,6 +2977,31 @@ def park_patched_backup(markers):
     os.rename(backup, parked)
     print(f"  tweakcc backup was a PATCHED binary — parked as {parked.name} "
           f"(it would have been restored over the staged copy)")
+    return parked
+
+
+def refresh_tweakcc_backup(staged, markers):
+    """Give tweakcc the exact staged pristine, retaining a differing backup.
+
+    Upstream 4.4.0 refuses a backup from another CC version. Its config may
+    still name an older version while a stage is being tested; that is not a
+    reason to drop all feature patches. The caller supplies the verified stock
+    stage, never the installed patched launcher. Park until activation verifies.
+    """
+    if not is_stock(staged, markers):
+        die("refusing to seed tweakcc's backup from a non-pristine stage")
+    backup = TWEAKCC_DIR / "native-binary.backup"
+    def digest(path):
+        with Path(path).open('rb') as stream:
+            return hashlib.file_digest(stream, 'sha256').digest()
+    if backup.exists():
+        if backup.stat().st_size == staged.stat().st_size and digest(backup) == digest(staged):
+            return None
+        parked = backup.with_name(backup.name + '.stock-' + str(time.time_ns()))
+        os.rename(backup, parked)
+    else:
+        parked = None
+    safe_put(staged, backup)
     return parked
 
 
@@ -2903,6 +3054,7 @@ def tweakcc_apply_to(staged, markers):
     if saved is None:
         die(f"no {cfgfile} — run tweakcc once interactively to create its config")
     park_patched_backup(markers)
+    refresh_tweakcc_backup(staged, markers)
     moved = False
     try:
         data = json.loads(saved)
@@ -3815,6 +3967,7 @@ def cmd_status(args):
         if backup_is_patched(markers):
             print("[ccctl] tweakcc's native-binary.backup is a PATCHED binary — roll back via "
                   "versions/<ver>.stock instead.")
+        machine_settings_quiet()
         return
 
     if getattr(args, "check", False):
@@ -3909,6 +4062,7 @@ def cmd_status(args):
                 print(f"[ccctl] MODEL GATE UNMASKED: {cap} is on by model on Fable 5.1, which "
                       f"{MODEL_GATES[cap][1].lower()} — add \"{var}\": \"0\" to the env block of "
                       f"{Path.home() / '.claude' / 'settings.json'} (markers cannot see this)")
+        machine_settings_quiet()
         return
 
     data = ensure_prompt_data(ver)
@@ -4103,6 +4257,7 @@ def cmd_status(args):
         # A diagnostic must never be the thing that breaks `status`, which is
         # what an operator runs when something is already wrong.
         print(f"server arms    : unreadable ({exc!r})")
+    print(f"settings       : {machine_settings_line()[1]}")
     verdict, detail = tripwire_state()
     print(f"tripwire       : {verdict if verdict == 'ok' else verdict.upper()} — {detail}")
     if verdict == "ok":
@@ -4122,15 +4277,17 @@ def cmd_status(args):
                          else " — the latest recorded session start"))
         except Exception as exc:                           # noqa: BLE001
             print(f"                 timing: unreadable ({exc!r})")
-    # two independent rollback paths; the span engine creates the second one
-    # only (it never invokes tweakcc --apply, which is what writes the first)
+    # A tweakcc backup is mutable staging state, not intrinsically recovery.
     paths = []
     bk = TWEAKCC_DIR / "native-binary.backup"
     if bk.exists():
         # Only a STOCK backup is a restore path; a patched one is a trap, and
         # saying so here is cheaper than finding out during a rollback.
         paths.append("tweakcc backup (PATCHED — not a rollback source)"
-                     if backup_is_patched(markers) else "tweakcc backup")
+                     if backup_is_patched(markers) else
+                     ("tweakcc backup (matches installed version's pristine)"
+                      if validated_restore_backup(ver, markers) else
+                      "tweakcc staging backup (not a validated live restore path)"))
     # `.stock` copies are pristine by construction — ccctl only creates one from
     # a binary it verified stock. `.pre-swap` copies are NOT: they are whatever
     # was live before a swap, which after the first round is one of ours. Calling
@@ -4154,6 +4311,7 @@ def cmd_apply(args):
         cmd_pull(args, quiet=True)
     edits = repo_edits(cfg)
     markers = repo_markers(cfg)
+    apply_machine_settings()
     if getattr(args, "stock", False):
         return enter_stock_arm(cfg, cc_version(), reason=getattr(args, "reason", None))
     if not edits:
@@ -4348,6 +4506,7 @@ def cmd_update(args):
     if policy == "analyze-only":
         print(f"\npolicy analyze-only: stopping after analysis ({report['overall']}).")
         return
+    apply_machine_settings()
 
     if stock:
         # The verdicts are advisory on this path — nothing of ours is applied,
@@ -4486,7 +4645,9 @@ SERVER_ARMS = {
     "tengu_heron_brook": (None, "heron_brook — we cut it", "stock"),
     "tengu_brook_heron": (None, "brook_heron — we cut it", "stock"),
     "tengu_fennel_godwit": (None, "suppresses the model-capability arm", "stock"),
-    "tengu_ochre_wren": (None, "intro frame wording", "stock"),
+    # Gone in 2.1.296: the generic agent-role intro is now the default
+    # whenever no output style is set.
+    "tengu_ochre_wren": (None, "intro frame wording (the default since 2.1.296)", "stock"),
     # CC 2.1.280's built-in plugins are each gated by a flag of this kind, and
     # this is the one that carries prompt text against ours: `responsive-mode`
     # replaces the focus-mode section with an instruction to "respond
@@ -4525,6 +4686,27 @@ SERVER_ARMS = {
                                       "short bullets' of remaining work", "stock"),
     "tengu_vellum_anchor": (None, "usage-limit-approaching reminder: asks for 'up to 3 short "
                                   "bullets' of remaining work", "stock"),
+    # CC 2.1.296, two subagent knobs, both off unless armed
+    # (notes/2026-10-09-linux-2.1.296.md). `snappy_pelican` lets an Agent call
+    # carry a relative `effort: "lower"|"higher"` and adds a sentence to the
+    # Agent tool telling the model to run each independent lookup of a fan-out
+    # one step cheaper. It is dark while a subagent model pin or
+    # CLAUDE_CODE_EFFORT_LEVEL is set. The operator's own rule is the other
+    # way round (effort chosen per kind of work, global CLAUDE.md), so an arm
+    # here is one to judge, and `CLAUDE_CODE_SNAPPY_PELICAN=0` is the mask.
+    "tengu_temporal_hare": (None, "alternate lean system/tool prompts — shared predicate cut", "stock"),
+    "tengu_snappy_pelican": ("CLAUDE_CODE_SNAPPY_PELICAN",
+                             "Agent tool: 'give each independent lookup effort: \"lower\"' "
+                             "and the relative effort parameter", "stock"),
+    # `luminous_locket` is an object ({off, maxViews, minDaysApart, lead,
+    # tail}), default {off: true}. Armed, a classifier call on the session's
+    # model reads the user's CLAUDE.md, skills and custom agents at startup,
+    # and a positive verdict shows a notice: "CLAUDE.md asks for subagents ·
+    # editing it may save tokens on <model>" (wording server-replaceable). It
+    # reaches the operator, not the model. `...CONFIG_WARNING=0` keeps it off.
+    "tengu_luminous_locket": ("CLAUDE_CODE_SUBAGENT_CONFIG_WARNING",
+                              "startup notice that the user's config asks for subagents, "
+                              "after a classifier call over CLAUDE.md, skills and agents", "stock"),
 }
 
 
@@ -5990,6 +6172,8 @@ def delivered_verdicts(req, owners, snapshot=None):
 # Read out of the 2.1.278 bundle; a key missing from both tables is printed as
 # unclassified, so a new one is news rather than silence.
 CLIENT_DATA_ROUTES = {
+    "temporal_hare": (None, "alternate lean prompt bundle, disabled at its shared predicate",
+                      "lean-rewrite-off"),
     "tengu_cozy_teapot": ("CLAUDE_CODE_COZY_TEAPOT",
                           "'relaxed' puts upstream's bash-first variant in the bypass/auto-mode "
                           "shell block instead of ours", "bypass-auto-shell-block-invert"),
@@ -6272,6 +6456,117 @@ def settings_env():
     return env
 
 
+# Top-level keys this fleet keeps in the user's settings.json, with the value
+# each must have. `status` reads them, the quiet tripwire speaks when one has
+# drifted, and `apply`/`update` write them back, so a machine picks up a new
+# entry on its next round with nobody remembering to.
+#
+# idleCompaction (operator, 2026-10-11): CC compacts a long idle conversation
+# shortly before its one-hour prompt cache expires, when the server flag
+# tengu_sunny_locket says "compact". UNSET reads as on, so absence is drift;
+# CC's own schema text: "Setting it to true does not turn idle compaction on".
+#
+# promptCacheTtl (operator, 2026-10-15, asked for a config fix): the server
+# flag tengu_sequential_cloud arms cache keepalive for interactive sessions,
+# whose cache-keepalive beta makes the API write the 5-minute TTL although CC
+# asks for 1h, then renews it by touch every 30 s for up to 60 min of activity.
+# A setting-chosen TTL bypasses keepalive (it runs only for reason
+# "subscriber"), so the main conversation writes 1h again. Remove the entry
+# when anthropics/claude-code#101685 is settled; notes/2026-10-15-cache-keepalive-5m.md.
+MACHINE_SETTINGS = {"idleCompaction": False, "promptCacheTtl": "1h"}
+_UNSET = object()
+
+
+def user_settings_path():
+    return Path.home() / ".claude" / "settings.json"
+
+
+def machine_settings_drift(settings=None):
+    """[(key, want, have)] for every MACHINE_SETTINGS key the user layer does
+    not carry at the wanted value; `have` is _UNSET when the key is absent.
+    Raises ValueError on a settings file that exists and is not a JSON object:
+    that is not drift, and nothing here should paper over it."""
+    path = settings or user_settings_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        data = {}
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{path} is not valid JSON ({exc})") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} is not a JSON object")
+    return [(k, want, data.get(k, _UNSET)) for k, want in MACHINE_SETTINGS.items()
+            if k not in data or type(data[k]) is not type(want) or data[k] != want]
+
+
+def _setting_text(value):
+    return "unset" if value is _UNSET else json.dumps(value)
+
+
+def ensure_machine_settings(settings=None):
+    """Write every drifted MACHINE_SETTINGS key into the user's settings.json
+    and return what was changed, as machine_settings_drift returns it. Every
+    other key keeps its value and its position. The previous file is kept
+    beside it as settings.json.ccctl-prev, and the new one is renamed into
+    place, so a reader never sees half a file. An unparseable file is left
+    alone (ValueError): rewriting it would lose whatever the operator had."""
+    path = settings or user_settings_path()
+    drift = machine_settings_drift(path)
+    if not drift:
+        return []
+    try:
+        old = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        old = None
+    data = json.loads(old) if old is not None else {}
+    for key, want, _have in drift:
+        data[key] = want
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if old is not None:
+        path.with_name(path.name + ".ccctl-prev").write_text(old, encoding="utf-8")
+    tmp = path.with_name(path.name + ".ccctl-tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+    return drift
+
+
+def apply_machine_settings():
+    """The apply/update step: set what drifted and say so, in one line. Never
+    fatal: a settings file this cannot write must not stop a binary round."""
+    try:
+        changed = ensure_machine_settings()
+    except (OSError, ValueError) as exc:
+        print(f"settings       : NOT SET — {exc}; set "
+              + ", ".join(f'"{k}": {json.dumps(v)}' for k, v in MACHINE_SETTINGS.items())
+              + " by hand")
+        return
+    for key, want, have in changed:
+        print(f"settings       : set {key} to {json.dumps(want)} (was {_setting_text(have)}) in "
+              f"{user_settings_path()} — new sessions read it")
+        log_entry("settings", f"- `{key}`: {_setting_text(have)} -> {json.dumps(want)} "
+                              f"in `{user_settings_path()}`")
+
+
+def machine_settings_line():
+    """(ok, text) for `status`."""
+    try:
+        drift = machine_settings_drift()
+    except ValueError as exc:
+        return False, f"UNREADABLE — {exc}"
+    if drift:
+        return False, ("DRIFTED — " + ", ".join(f"{k} is {_setting_text(h)}, wanted {json.dumps(w)}"
+                                                 for k, w, h in drift) + " — run ccctl.py apply")
+    return True, ", ".join(f"{k}={json.dumps(v)}" for k, v in MACHINE_SETTINGS.items())
+
+
+def machine_settings_quiet():
+    """The tripwire's line, or nothing. Both arms: the setting is about the
+    machine, not about whose prompts the binary carries."""
+    ok, text = machine_settings_line()
+    if not ok:
+        print(f"[ccctl] SETTINGS {text}")
+
+
 TRIPWIRE_SCRIPTS = ("ccctl.py", "cc-doctor.sh")
 
 
@@ -6441,7 +6736,11 @@ def arms_armed(value):
     """Is this flag value an ARM? `false`, `null` and `"default"` are not; CC
     treats a missing flag as off, and thistle_grebe uses the string "default"
     for its own off state, and lantern_wick_mode the string "off" (CC 2.1.280
-    maps every value but "wrap-up" and "next-steps" to it)."""
+    maps every value but "wrap-up" and "next-steps" to it). An object-valued
+    flag is off when it says `off`."""
+    if isinstance(value, dict):
+        # an object-valued flag carries its own switch (luminous_locket, 2.1.296)
+        return not value.get("off", False)
     return value not in (None, False, "default", "", "off")
 
 
@@ -6486,7 +6785,8 @@ def cmd_flags(args):
         ev = env.get(var) if var else None
         evs = f"{var.split('_')[-1].lower()}={ev}" if ev is not None else ("-" if var else "n/a")
         print(f"  {k:24} {sv:9} {evs:9} {whose:6} {what}"
-              + ("  (now a capability — see below)" if retired else ""))
+              + ("  (now a capability — see below)"
+                 if retired and k[len("tengu_"):] in MODEL_GATES else ""))
         if ev is not None and arms_armed(v) and not retired:
             masked.append(k)
     # Same screen, because the question "what is deciding our sections that is
@@ -6866,10 +7166,26 @@ def cmd_restore(args):
         die(f"{backup} carries our edit markers — it is a PATCHED binary, not a stock one. "
             f"`--restore` would put it back and call it stock. Use a parked pristine copy "
             f"instead: see `ccctl.py status` (restore path) and versions/<ver>.stock.")
-    r = run([*tweakcc_node(), "--restore"], timeout=600)
+    if validated_restore_backup(cc_version(), markers) is None:
+        die("tweakcc's backup does not match the installed version's parked pristine — "
+            "it may belong to an unactivated staged update. Use that parked pristine "
+            "or reinstall; no restore was attempted.")
+    cfgfile = TWEAKCC_DIR / "config.json"
+    if not cfgfile.is_file():
+        die("no tweakcc config — no restore was attempted")
+    saved = cfgfile.read_text(encoding="utf-8")
+    data = json.loads(saved)
+    data["ccInstallationPath"] = str(claude_binary())
+    try:
+        cfgfile.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        r = run([*tweakcc_node(), "--restore"], timeout=600)
+    finally:
+        cfgfile.write_text(saved, encoding="utf-8")
     print((r.stdout + r.stderr).strip()[-1500:])
     if r.returncode != 0:
         die("restore failed")
+    if not is_stock(claude_binary(), markers):
+        die("tweakcc reported restoration but the live executable still carries our markers")
     state = load_json(STATE, {})
     state.pop("applied", None)
     save_json(STATE, state)

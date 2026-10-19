@@ -24,3 +24,4 @@ node_modules/
 __pycache__/
 *.py[cod]
 .playwright-mcp/
+corpus/.fetch-stamps/

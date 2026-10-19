@@ -250,6 +250,12 @@ Two independent facts, both in the analyze report:
   then re-applies only its config-driven patch set — i.e. it wipes adhoc
   patches. The span engine never uses `--apply`; the legacy `tweakcc`
   engine option orders fragments-then-adhoc for this reason.
+- Since upstream 4.4.0, a backup from another CC version is refused. Before
+  the feature pass, ccctl seeds that backup from the verified staged pristine,
+  retaining any differing previous copy until verification. `prune` removes
+  the superseded stock backup after the round; the installed version's
+  independent pristine remains the recovery source. Regression and evidence:
+  [Windows 2.1.303](../notes/2026-10-19-win32-2.1.303.md).
 - The backup is refreshed once per CC version — a fresh backup snapshots
   *whatever binary is live at that moment*, so a patched binary can poison
   it. `pristine_source()` never trusts a backup blindly: it checks markers
@@ -306,10 +312,9 @@ Consequences the pipeline now encodes:
   before any bundle can be parsed) and `is_stock` (our text in an abandoned
   copy still disqualifies a binary from being parked as pristine).
 
-**Open.** Nine repacks per update is nine appends. Collapsing the tranche into
-a single write — `adhoc-patch --script`, or repeated `-s` if its variadic
-option takes pairs — would bring a patched linux binary back to ~600 MB. See
-TODO item 7.
+Nine repacks per update were nine appends on the legacy path. That finding
+closed with the code-split writer above (the original TODO item 7, in
+`notes/archive/TODO-closed-2026-09-28.md`).
 
 ## Autoupdater hardening (research finding, applied)
 
@@ -349,6 +354,20 @@ Then the two durability guards (spec/30), which the pipeline assumes:
   default subagent models, to see how Sonnet 5.5 plays out (it replaced the
   2026-09-22 Opus pin, below). `status` prints a `subagent model` line either
   way; do not assume a machine has dropped the pin, read `status`.
+- `~/.claude/settings.json` → `idleCompaction: false` (operator, 2026-10-11):
+  CC otherwise compacts a long idle conversation shortly before its prompt
+  cache expires, on a server flag. Unset reads as on. This one is not set by
+  hand: `apply` and `update` write every key in `ccctl.MACHINE_SETTINGS` that
+  has drifted, keeping the previous file as `settings.json.ccctl-prev`;
+  `status` prints a `settings` line and the tripwire speaks on drift. A new
+  fleet-wide top-level setting is one entry in that table
+  (`notes/2026-10-11-idle-compaction.md`).
+- `~/.claude/settings.json` → `promptCacheTtl: "1h"` (operator asked for a
+  config fix, 2026-10-15), written the same way. A server flag arms cache
+  keepalive for interactive sessions, and the API then writes the 5-minute
+  TTL. A setting-chosen TTL bypasses keepalive. It is a workaround for
+  anthropics/claude-code#101685; the removal condition is in
+  `notes/2026-10-15-cache-keepalive-5m.md`.
 
 **Sibling read-back, after any change to our text** (operator, 2026-10-08:
 "You can also query a sibling opus `claude -p` process to ask them about
@@ -413,9 +432,13 @@ ccctl.py apply                  # ends the arm: the tranche goes back on
 wrong (markers missing, deleted text back, an adhoc not landed, or state and
 binary disagreeing), **3** deliberately in the stock arm.
 
-Rollback, strongest first: `ccctl.py restore` (tweakcc's byte-exact backup);
-the parked pristine (`versions/<ver>.stock` on POSIX, `claude.exe.pre-swap*`
-in the launcher dir on win32); any reinstall.
+Stock restore: `ccctl.py restore` requires tweakcc's backup to equal the
+installed version's parked pristine. A failed stage can replace that backup
+before activation; marker absence alone is not recovery proof. `status`
+labels an unmatched staging backup as unvalidated. The independent pristine
+is `versions/<ver>.stock` on POSIX or `versions/<ver>` on win32.
+`claude.exe.pre-swap*` holds previous patched builds, not stock. Reinstall is
+the remaining recovery route.
 
 Tests: `python tools/tests/test_ccctl_hardening.py` and
 `test_ccctl_posix_place.py` — sandboxed, no real binaries, meaningful on
@@ -471,6 +494,13 @@ and `entrypoint` into its first transcript lines under `~/.claude/projects/`.
 A version other than the installed one is a bundled copy at work.
 
 ## tweakcc's own patch set, and the in-CC indicator
+
+**Current writer, since 2026-10-12:** the reviewed upstream build in
+`release.json` carries native code-split support without our source overlay
+or dist adapter. Its module records can point past retained old source;
+ccctl's live reads and writes follow those records. Whole-file marker
+absence is reserved for pristine checks. The staged build and failure
+evidence are in `notes/2026-10-12-win32-fleet-catchup.md`.
 
 **Rule (operator, 2026-08-24): `tweakcc --apply` always runs, and always
 before our string patches.** Not for tweakcc's QoL patches — for its

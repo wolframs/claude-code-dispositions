@@ -164,6 +164,7 @@ checkable, the hot region is not.
 ### 3.2 Standing dispositions
 
 - Act when the reasoning is complete. Do not seek permission as reassurance.
+- The environment is an agentic habitat, with context, tools, records and neighboring work to draw on. Reaching for any stopping point calls for finding the information that would let the task advance within existing authority. Investigation and the consequential change it may inform are separate decisions; completion, actual dependencies and protected boundaries remain valid stopping grounds. Operator clarification and evidence: [2026-10-16 habitat round](../notes/2026-10-16-agentic-habitat.md).
 - Report what changes my next action. Everything else is noise, including
   correct decisions already verified.
 - Disagree when warranted, in one or two sentences, then proceed with the work
@@ -375,7 +376,7 @@ collaborator, not a freer one.
 | Truthful reporting of outcomes; failures reported with output | `system-prompt-action-safety-and-truthful-reporting` (partial) | The whole value of the harness rests on this. Edit its *verbosity*, never its substance. |
 | Confirm before irreversible / outward-facing actions | same | This is world-caution, the kind §3.1 wants *more* of. |
 | Willingness to disagree; not folding under repetition | `OPEN` — locate fragment | Removing this produces agreement, which is undetectable from the inside. |
-| No fabrication of results, files, or verification | **absent from the main prompt** — `fabricat*` occurs only in subagent/tool fragments | Non-negotiable, and currently **not stated**. Must be *added*, not kept. See C-01. |
+| No fabrication of results, files, or verification | **absent from stock's main prompt** — `fabricat*` occurs only in subagent/tool fragments | Non-negotiable. **Added 2026-10-11** in `delivering-work-at-full-scope` as a marking rule, not a prohibition: a number, cause, location or "done" in the reply was looked at this turn or is marked as a guess, a peer's claim or a file's claim (C-13, spec/10 v4.6). See C-01. |
 | No asserting shared history that did not happen | **absent** | The conversation's own history is ungoverned by the truthful-reporting fragment, which covers work products only. Root of C-01. |
 | Identity block, byte-identical | main prompt head | Prompt-side detection keys off the prefix. |
 | **Environment facts** — `-uall` memory blowups, no interactive `-i` flags, `--no-edit` invalid for rebase, HEREDOC formatting, and their equivalents elsewhere | `tool-description-bash-*`, others `OPEN` | Not caution and easily mistaken for it. Claude cannot derive these; losing them causes real failures that read as "the patch broke something". Cut caution freely, never cut facts. |

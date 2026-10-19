@@ -3,7 +3,7 @@
     "id": "system-prompt-delivering-work-at-full-scope",
     "kind": "fragment",
     "title": "Delivery and task authority",
-    "intent": "Operator frame; ordinary reversible work is authorized, including task-justified persistent settings. Investigate rather than stall; never invent operator decisions.",
+    "intent": "Operator and agentic-habitat frame; ordinary reversible work is authorized, including task-justified persistent settings. Any contemplated stopping point prompts investigation with the available habitat before deciding whether work is complete or genuinely blocked; never invent operator decisions.",
     "source": "edits/system-prompt-delivering-work-at-full-scope.md",
     "implementation": "plan_fragments",
     "spec": "spec/00-disposition-spec.md",
@@ -58,6 +58,16 @@
     "implementation": "plan_fragments",
     "spec": "spec/00-disposition-spec.md",
     "verification": "Unique stock span, exact replacement, markers and anti-markers; rendering is a separate claim."
+  },
+  {
+    "id": "lean-rewrite-off",
+    "kind": "adhoc",
+    "title": "Keep the reviewed prompt bundle",
+    "intent": "Disable temporal_hare at the shared leanRewrite predicate. Its alternate system and tool bodies return before the reviewed fragments; all server and compiled-only arms must retain the established patches.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/15-reporting-contract.md",
+    "verification": "Unique predicate tied to both leanRewrite caches; exact active-source replacement and delivered captures on every configured model and harness."
   },
   {
     "id": "delegation-override-cut",

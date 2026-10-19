@@ -63,16 +63,16 @@ and none of them carries context lines.
 
 Because a replacement is a whole body, any stock sentence still in it was kept
 on purpose rather than quoted to anchor a patch. Measured against the release
-`release.json` names, re-measured 2026-09-25:
+`release.json` names, re-measured 2026-10-19:
 
 | Fragment | Stock body | This body | Kept | Longest kept run |
 | --- | ---: | ---: | ---: | ---: |
-| `system-prompt-delivering-work-at-full-scope` | 337 w | 375 w | 0 w | — |
-| `system-prompt-communication-style` | 220 w | 81 w | 9 w | 9 w (the section heading) |
-| `tool-description-todowrite` | 1410 w | 239 w | 17 w | 12 w (the opening line) |
-| `system-prompt-outcome-first-communication-style` | 442 w | 99 w | 47 w | 21 w |
+| `system-prompt-delivering-work-at-full-scope` | 337 w | 560 w | 0 w | — |
+| `system-prompt-communication-style` | 220 w | 81 w | 9 w | 9 w |
+| `tool-description-todowrite` | 1410 w | 239 w | 17 w | 12 w |
+| `system-prompt-outcome-first-communication-style` | 374 w | 99 w | 37 w | 17 w |
 | `system-prompt-correction-restraint` | 201 w | 121 w | 53 w | 23 w |
-| `system-prompt-subagent-delegation-examples` | 343 w | 254 w | 146 w | 50 w (a worked example) |
+| `system-prompt-subagent-delegation-examples` | 343 w | 254 w | 146 w | 50 w |
 
 The measurement is exact, so it is worth saying which one it is: split
 `ccctl.stock_body(entry)` and `ccctl.edit_text(path)` on whitespace — so

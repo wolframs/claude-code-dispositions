@@ -6,7 +6,7 @@ A non-fork subagent starts with no context from this conversation
 a list of one item tells the operator nothing
 batch work when one invocation genuinely replaces several separate calls
 ){return null;let t=
-Unclear is not blocked
+You are working in an agentic habitat
 phrase you coined this turn is not a name
 The longer you work, the less of it they see
 Reversible work within the task is already authorized
@@ -20,3 +20,8 @@ say so and where the output is
 not what it printed
 If you are a subagent, do not spawn further subagents unless
 a thought per short paragraph, a blank line between them
+An offer is for work outside what the task already authorizes
+under way, not offered
+weigh it like money
+marked for what it is
+A caution you adopt is yours

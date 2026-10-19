@@ -51,9 +51,12 @@ def check_release(root=ROOT):
     for key in ('ccVersion', 'promptData', 'tweakcc', 'stock'):
         if key not in release:
             raise ValueError(f'release.json lacks {key}')
-    overlay = root / release['tweakcc']['overlay']
-    if not overlay.is_file():
-        raise ValueError(f'Selected tweakcc overlay is missing: {overlay.name}')
+    overlay = release['tweakcc'].get('overlay')
+    if overlay:
+        if not (root / overlay).is_file():
+            raise ValueError(f'Selected tweakcc overlay is missing: {overlay}')
+    elif release['tweakcc'].get('verifiedCcVersion') != release['ccVersion']:
+        raise ValueError('Upstream tweakcc build lacks a verification for the selected CC release')
     if not release['stock']:
         raise ValueError('release.json records no pristine binary hash for any platform')
     # The build helper must pin what release.json pins, or the two drift apart.

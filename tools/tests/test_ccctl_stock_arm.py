@@ -18,6 +18,7 @@ What is worth pinning here, and why:
 import atexit
 import shutil
 import argparse
+import json
 import importlib.util
 import sys
 import tempfile
@@ -42,6 +43,14 @@ atexit.register(shutil.rmtree, sandbox, True)
 cc.STATE = sandbox / "ccctl-state.json"
 cc.STOCK_SENTINEL = sandbox / "stock-arm"
 cc.CHANGELOG = sandbox / "changelog.md"
+# The tripwire also reads the user's settings.json for MACHINE_SETTINGS drift.
+# That is the real machine's file unless stubbed: on a machine whose settings
+# lag the fleet, the drift line ("run ccctl.py apply") leaks into the arm
+# checks below and fails them for a reason that has nothing to do with the arm
+# (macOS, 2026-10-11, cc-deploy of 7fa485a refused on exactly this).
+_settings = sandbox / "settings.json"
+_settings.write_text(json.dumps({k: v for k, v in cc.MACHINE_SETTINGS.items()}), encoding="utf-8")
+cc.user_settings_path = lambda: _settings
 
 # --- state round-trip -------------------------------------------------------
 check("no arm declared on a fresh state dir", cc.stock_arm() is None)
@@ -270,6 +279,10 @@ check("SERVER_ARMS: every env-forced arm names a real CLAUDE_CODE_ var",
       all(v[0] is None or v[0].startswith("CLAUDE_CODE_")
           for v in cc.SERVER_ARMS.values()),
       str([v[0] for v in cc.SERVER_ARMS.values()]))
+check("arms_armed: an object-valued flag is armed unless it says off",
+      cc.arms_armed({"maxViews": 3}) and cc.arms_armed({"off": False})
+      and not cc.arms_armed({"off": True}) and not cc.arms_armed(None)
+      and not cc.arms_armed("default") and cc.arms_armed(True))
 check("SERVER_ARMS: the two the operator forces by env are tracked and marked OURS",
       cc.SERVER_ARMS["tengu_bison_cairn"][0] == "CLAUDE_CODE_BISON_CAIRN"
       and cc.SERVER_ARMS["tengu_larch_cistern"][0] == "CLAUDE_CODE_LARCH_CISTERN"
