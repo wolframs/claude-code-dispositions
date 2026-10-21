@@ -7,9 +7,9 @@
     "redact": 128
   },
   "manifest_name": "claude-code-dispositions",
-  "manifest_sha256": "9fb44e9375ef3c7e5b9d033fd67266eeb74a7c534d93cc8f2a6bbee840e3a313",
+  "manifest_sha256": "4c4c445ab4b016a35f6b110a98e18576ff219c19c2773969b279098bfc5b7555",
   "open_reviews": 0,
-  "source_commit": "bc251e7382504b823d9431fdeb3cf3e32814024a",
+  "source_commit": "5e6a9c93cfbad5353f3705c4ffa083854463123a",
   "staged_files": 138,
   "tool_version": "1",
   "unclassified_files": 0
