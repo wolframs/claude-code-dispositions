@@ -21,6 +21,9 @@ with, without touching the committed set:
     extract_human_turns.py --src ~/.claude/projects --since 2026-08-19T20:20 \
         --exclude probe-runs --exclude=-tmp --exclude ccctl --prefix PT --out /tmp/post
 
+Each record's `signals` lists what he did without words before that turn:
+interrupted, tool-denied, last-in-session.
+
 `--since` is compared with the turn's UTC timestamp. Give such a run its own
 `--prefix`, because the HT numbers are cited from spec/ and notes/.
 """
@@ -38,6 +41,8 @@ RAW = ROOT / "corpus" / "raw"
 OUT = ROOT / "corpus" / "pushbacks"
 
 ASSISTANT_CHARS = 900
+INTERRUPTED = "[Request interrupted"
+TOOL_DENIAL = "The user doesn't want to"
 
 
 def prose(parts):
@@ -45,9 +50,38 @@ def prose(parts):
 
 
 def clip(text, limit):
+    """Keep both ends: he reacts to how a message closes as often as to its opening."""
     if len(text) <= limit:
         return text
-    return text[:limit] + f"\n… [clipped, {len(text)} chars total]"
+    return text[:limit // 2] + f"\n… [clipped, {len(text)} chars total] …\n" + text[-limit // 2:]
+
+
+def denied(parts):
+    for block in parts:
+        if block.get("type") != "tool_result" or not block.get("is_error"):
+            continue
+        content = block.get("content")
+        if not isinstance(content, str):
+            content = "".join(b.get("text", "") for b in content or [])
+        if content.startswith(TOOL_DENIAL):
+            return True
+    return False
+
+
+def signals(turns, i, last_human):
+    """What he did without words between his previous turn and this one."""
+    found = set()
+    for j in range(i - 1, -1, -1):
+        t = turns[j]
+        if t["author"] in (T.HUMAN, T.ORCHESTRATOR):
+            break
+        if t["text"].startswith(INTERRUPTED):
+            found.add("interrupted")
+        if t["author"] == T.TOOL and denied(t["parts"]):
+            found.add("tool-denied")
+    if i == last_human:
+        found.add("last-in-session")
+    return sorted(found)
 
 
 def collect(src=RAW, since="", exclude=(), prefix="HT", until=""):
@@ -56,6 +90,7 @@ def collect(src=RAW, since="", exclude=(), prefix="HT", until=""):
         if any(x in path.parent.name for x in exclude):
             continue
         turns = [t for t in T.load(path) if t["role"] != "system"]
+        last_human = max((i for i, t in enumerate(turns) if t["author"] == T.HUMAN), default=-1)
         for i, t in enumerate(turns):
             if (t["ts"] or "") < since or (until and (t["ts"] or "") >= until):
                 continue
@@ -84,6 +119,7 @@ def collect(src=RAW, since="", exclude=(), prefix="HT", until=""):
                 "assistant_before": clip(prior, ASSISTANT_CHARS),
                 "human": body,
                 "human_source": embedded[1] if embedded else "typed",
+                "signals": signals(turns, i, last_human),
             })
 
     records.sort(key=lambda r: (r["ts"], r["session"], r["turn"]))
@@ -109,7 +145,8 @@ def collect(src=RAW, since="", exclude=(), prefix="HT", until=""):
 def entry(r):
     return [
         f"## {r['id']} — `{r['session']}` turn {r['turn']} — {r['ts'][:16]}"
-        + (f" — {r['model']}" if r.get("model") else ""),
+        + (f" — {r['model']}" if r.get("model") else "")
+        + (f" — [{', '.join(r['signals'])}]" if r.get("signals") else ""),
         "",
         "**Claude, immediately before:**",
         "",

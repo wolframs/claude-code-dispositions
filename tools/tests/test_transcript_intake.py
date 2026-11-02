@@ -57,6 +57,25 @@ class IntakeTests(unittest.TestCase):
             self.assertEqual(results[0]['human_source'], 'telegram-pulse')
             self.assertEqual(extract.collect(root, until='2026-10-06'), [])
 
+    def test_wordless_signals_attach_to_the_turn_that_follows(self):
+        denial = {'type': 'user', 'timestamp': '2026-10-06T12:07:37Z', 'message': {'content': [
+            {'type': 'tool_result', 'is_error': True, 'tool_use_id': 'x',
+             'content': "The user doesn't want to take this action right now. STOP what you are doing"}]}}
+        records = [user('first'), denial, user('[Request interrupted by user]'), user('no, the other one')]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'project').mkdir()
+            (root / 'project' / 'session.jsonl').write_text(
+                '\n'.join(json.dumps(r) for r in records), encoding='utf-8')
+            found = {r['human']: r['signals'] for r in extract.collect(root)}
+        self.assertEqual(found['first'], [])
+        self.assertEqual(found['no, the other one'], ['interrupted', 'last-in-session', 'tool-denied'])
+
+    def test_a_long_assistant_turn_keeps_its_closing(self):
+        clipped = extract.clip('open ' + 'x' * 2000 + ' close', 900)
+        self.assertTrue(clipped.startswith('open '))
+        self.assertTrue(clipped.endswith(' close'))
+
     def test_harness_and_child_prompts_do_not_yield_human_messages(self):
         record = user(t.PULSE_START)
         self.assertEqual(t.classify_user(record, t.blocks(t.PULSE_START), True), t.AGENT)

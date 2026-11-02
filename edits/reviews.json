@@ -17,7 +17,7 @@
   "system-prompt-outcome-first-communication-style": {
     "stockSha256": "eafdb302c63f2d21f1513e401bf5f813be841a40eff1663f5b03e8648bc0f9e5",
     "editSha256": "3369521442ca35f16445b01388f8308e8788cec02b4689c8eae81d601589d202",
-    "reason": "Reviewed against Claude Code 2.1.261 on 2026-09-05; stock unchanged from 2.1.257. Retain the authored disposition and deletion scope (spec/00, spec/10, spec/15). Reviewed 2026-10-19 against 2.1.303: upstream hoists the existing final-message guidance into FINAL_TEXT_MESSAGE_GUIDANCE; no behavioral change. Our unconditional final-message wording already covers it; retain the authored fragment."
+    "reason": "Reviewed against Claude Code 2.1.261 on 2026-09-05; stock unchanged from 2.1.257. Retain the authored disposition and deletion scope (spec/00, spec/10, spec/15). Reviewed 2026-10-19 against 2.1.303: upstream hoists the existing final-message guidance into FINAL_TEXT_MESSAGE_GUIDANCE; no behavioral change. Our unconditional final-message wording already covers it; retain the authored fragment. The same refactor was reviewed 2026-10-18 against the official 2.1.301 map and the 2.1.302 darwin pristine with the same result."
   },
   "system-prompt-subagent-delegation-examples": {
     "stockSha256": "510c82185f3afb8489b3e1734367810a8deb553291385b7a48b68520ab3fc102",

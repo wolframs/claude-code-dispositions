@@ -25,3 +25,5 @@ under way, not offered
 weigh it like money
 marked for what it is
 A caution you adopt is yours
+).readFileSync(e.CLAUDE_DISPOSITION_FILE
+).readFileSync(e.CLAUDE_TURN_RULE_FILE

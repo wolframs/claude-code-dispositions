@@ -375,6 +375,21 @@ check("2.1.293: the server text is cut and the Haiku 5.5 fallback is kept",
       and b'Wg("brook_heron",()=>null)' in gate293.get("new", b""),
       str(gate293.get("new", b"")))
 
+# --- 2.1.310 memoizes the heron_brook value and passes it to the server-text
+# function. The accessor must be the one opus5_reduced_delegation reads.
+memo_delegation = haiku_delegation.replace(
+    b'Wg("heron_brook",()=>FLo()??BLo(h,s))', b'Wg("heron_brook",()=>Zdr(vzn())??BLo(h,s))')
+gate310 = {i["name"]: i for i in cc.plan_adhocs(memo_delegation)}["delegation-override-cut"]
+check("2.1.310: memoized heron_brook value plans AUTO and keeps the fallback",
+      gate310["status"] == "AUTO"
+      and b'Wg("heron_brook",()=>BLo(h,s))' in gate310.get("new", b"")
+      and b"Zdr(" not in gate310.get("new", b""),
+      gate310.get("reason", "") or str(gate310.get("new", b"")))
+foreign = haiku_delegation.replace(
+    b'Wg("heron_brook",()=>FLo()??BLo(h,s))', b'Wg("heron_brook",()=>Zdr(other())??BLo(h,s))')
+check("2.1.310: a heron_brook argument from another accessor is MANUAL",
+      {i["name"]: i for i in cc.plan_adhocs(foreign)}["delegation-override-cut"]["status"] == "MANUAL")
+
 # A made-up sentence stands in for the stock one, as with the shell block: the
 # locator is a digest, so the fixture swaps the digest rather than quote the text.
 AP_SYN = b'Each agent type has its own fixture words here.'
@@ -411,6 +426,16 @@ check("2.1.257: restructured communication selector plans AUTO",
 check("2.1.257: selector uses the lean branch's own predicate and session argument",
       b"if(e3o(n,e)||ktr(n)||LN(e)){let r=t3o(n,e);return`" == lean257.get("new", b""),
       str(lean257.get("new", b"")))
+
+# --- 2.1.310 passes brief mode in as a parameter: `let s=LU(r,e)&&!n;`.
+communication310 = communication257.replace(
+    b'let r=t3o(n,e);', b'let r=t3o(n,e)&&!b;')
+lean310 = {i["name"]: i for i in cc.plan_adhocs(communication310)}[
+    "lean-models-get-the-communication-fragment"]
+check("2.1.310: selector with a brief-mode suffix plans AUTO and keeps the suffix",
+      lean310["status"] == "AUTO"
+      and b"if(e3o(n,e)||ktr(n)||LN(e)){let r=t3o(n,e)&&!b;return`" == lean310.get("new", b""),
+      lean310.get("reason", "") or str(lean310.get("new", b"")))
 
 # --- 2.1.251 split the output-style renderer: the template literal moved into a
 # two-argument helper and the renderer became a bare null-guard. Both CC
@@ -467,7 +492,8 @@ check("2.1.268: section-list shape plans AUTO once the renderer is gone",
       section["status"] == "AUTO" and FLOOR_KEY in section.get("new", b""),
       section.get("reason", ""))
 check("2.1.268: the floor is appended to the section, not substituted for it",
-      section.get("new", b"").startswith(b'Jb("context_management",()=>E0s+"\\n\\n"+"')
+      section.get("new", b"").startswith(b'Jb("context_management",()=>E0s+"\\n\\n"+(()=>{try{')
+      and b'.claude/disposition.md' in section.get("new", b"")
       and section.get("new", b"").endswith(b'"),'),
       str(section.get("new", b""))[:120] + " ... " + str(section.get("new", b""))[-40:])
 check("2.1.268: only the one list entry is rewritten, siblings untouched",
@@ -476,6 +502,26 @@ check("2.1.268: only the one list entry is rewritten, siblings untouched",
 check("2.1.268: replacement stays ASCII, so latin-1 encoding cannot raise",
       section.get("new", b"").decode("latin-1").isascii())
 
+SECTION301 = b'jp(`context_management${w}`,()=>S?TIs:Sur),'
+variant = floor_of(SECTION301)
+check("2.1.301: floor follows either context body and preserves the variant key",
+      variant["status"] == "AUTO" and variant["old"] == SECTION301
+      and variant["new"].startswith(b'jp(`context_management${w}`,()=>(S?TIs:Sur)+"\\n\\n"+')
+      and FLOOR_KEY in variant["new"])
+check("2.1.301: duplicate variant context entries are MANUAL",
+      floor_of(SECTION301 * 2)["status"] == "MANUAL")
+
+def adhoc_of(blob, name):
+    return {i["name"]: i for i in cc.plan_adhocs(blob)}[name]
+
+WILLOW301 = (b'function Ydr(e){if(Bie(e)||!cMs(e))return null;'
+             b'return i("tengu_willow_tern_applied",{fromClientData:jko()===!0}),Vdr}')
+willow = adhoc_of(WILLOW301, "willow-tern-writing-style-cut")
+check("2.1.301: willow renderer remains cut behind its new rewrite guard",
+      willow["status"] == "AUTO" and b'{return null;if(Bie(e)||!cMs(e))' in willow["new"])
+check("2.1.301: an unrecognized willow renderer is MANUAL, never absent",
+      adhoc_of(WILLOW301.replace(b"return null", b"return void 0"),
+               "willow-tern-writing-style-cut")["status"] == "MANUAL")
 SECTION303 = b'mm(`context_management${w}`,()=>S?TLs:Vfr),'
 rewrite_floor = floor_of(SECTION303)
 check("2.1.303: floor follows the entire context-body choice",
@@ -632,6 +678,14 @@ ac_reworded = {i["name"]: i for i in cc.plan_adhocs(
 check("action-caution: a reworded clause is MANUAL",
       ac_reworded["status"] == "MANUAL", ac_reworded.get("status", ""))
 
+AC301 = AC_BUILDER.replace(b'(e){', b'(e,n=!1){').replace(
+    b'return null;return"', b'return null;if(n)return cIs;return"')
+ac301 = adhoc_of(AC301, AC)
+check("2.1.301: action-caution retains the alternate branch while patching its clause",
+      ac301["status"] == "AUTO" and ac301["new"] == ac301["old"].replace(
+          b"say so with the output;", b"say so and where the output is;"))
+check("2.1.301: action-caution branch must use the declared parameter",
+      adhoc_of(AC301.replace(b"if(n)return", b"if(r)return"), AC)["status"] == "MANUAL")
 ac303 = AC_BUILDER.replace(b'(e){', b'(e,n=!1){').replace(b'return null;return"', b'return null;if(n)return cLs;return"')
 ac303_plan = {i['name']: i for i in cc.plan_adhocs(ac303)}[AC]
 check("2.1.303: action-caution keeps the alternate branch and rewrites only the stock clause",
@@ -868,22 +922,7 @@ try:
     check("backup: no markers means unknowable — leave it alone, do not guess",
           cc.park_patched_backup([]) is None and bk.exists())
 
-    pristine = tmp5 / 'stage.exe'
-    pristine.write_bytes(b'new pristine version')
-    bk.write_bytes(b'old pristine version')
-    old_stock = cc.refresh_tweakcc_backup(pristine, MK)
-    check("backup: staging a new release retains the previous backup and seeds the exact new pristine",
-          old_stock.read_bytes() == b'old pristine version' and bk.read_bytes() == pristine.read_bytes())
-    check("backup: an identical pristine does not create another backup",
-          cc.refresh_tweakcc_backup(pristine, MK) is None)
-    pristine.write_bytes(MK[0].encode())
-    try:
-        cc.refresh_tweakcc_backup(pristine, MK)
-        refused = False
-    except SystemExit:
-        refused = True
-    check("backup: a patched stage cannot poison the stock backup",
-          refused and bk.read_bytes() == b'new pristine version')
+
 finally:
     cc.TWEAKCC_DIR = _savedtw
     shutil.rmtree(tmp5, ignore_errors=True)
@@ -989,6 +1028,16 @@ try:
     check("prune: never touches the live binary", live.exists())
     check("prune: never touches a bare versions/<ver> install (CC's own, not ours)",
           (vdir / "2.1.241").exists())
+
+    # A freshly upgraded pristine sorts first. It must not consume the slot
+    # reserved for an older pristine that can rebuild the rollback release.
+    os.utime(vdir / "2.1.241.stock", (0, 2_000_000_000))
+    (vdir / "2.1.233.stock").write_bytes(b"superseded stock")
+    os.utime(vdir / "2.1.233.stock", (0, 1))
+    cc.cmd_prune(B())
+    check("prune: newest protected pristine retains one older source in addition",
+          (vdir / "2.1.234.stock").exists() and (vdir / "2.1.241.stock").exists()
+          and not (vdir / "2.1.233.stock").exists())
 
     # a file a session is executing: OSError on unlink must be survivable
     doomed = tmp6 / "claude.exe.pre-swap.9"; doomed.write_bytes(b"running")
@@ -1520,6 +1569,27 @@ with tempfile.TemporaryDirectory() as _tmp:
             _raised = True
     check("open_for_write_retrying: a lock that stays is re-raised after the attempts",
           _raised and len(_calls) == 4, str(_calls))
+
+# --- 2.1.310: tweakcc without PR 1053 must never be run on the shared-slab build.
+import types as _types
+from unittest import mock as _mock2
+def _gap(target, clone, ancestor_rc=1, version="4.4.0"):
+    def _run(cmd, **kw):
+        if "merge-base" in cmd:
+            return _types.SimpleNamespace(stdout="", stderr="", returncode=ancestor_rc)
+        return _types.SimpleNamespace(stdout=version, stderr="", returncode=0)
+    with _mock2.patch.object(cc, "tweakcc_clone", lambda: clone), \
+            _mock2.patch.object(cc, "run", _run), \
+            _mock2.patch.object(cc, "tweakcc_node", lambda: ["node", "tweakcc"]):
+        return cc.tweakcc_container_gap(target)
+_clone = cc.Path("/nonexistent/tweakcc")
+check("container gap: 2.1.309 never asks", _gap("2.1.309", _clone) is None)
+check("container gap: 2.1.310 with a clone lacking the fix is refused",
+      "PR 1053" in (_gap("2.1.310", _clone) or ""))
+check("container gap: 2.1.310 with the fix in the clone's history passes",
+      _gap("2.1.310", _clone, ancestor_rc=0) is None)
+check("container gap: published 4.4.0 is refused, a later release passes",
+      _gap("2.1.311", None) is not None and _gap("2.1.311", None, version="4.4.1") is None)
 
 print()
 print(("ALL PASS" if not fails else f"{len(fails)} FAILURES: {fails}"))

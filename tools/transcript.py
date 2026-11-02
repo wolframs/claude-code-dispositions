@@ -60,6 +60,10 @@ ORCHESTRATOR_OPENERS = (
     "Two checks. 1) Look at the list of skills available to you and say whether the skills named 'compile', 'merge-origin-master' and 'bc-ticket-acceptance'",
     "Hello Lapis. This is Shimmer — the agent in ", "Shimmer again. Thank you —",
     "We are collaborating on a UX/UI critique, not implementation. I am Codex,",
+    # multi-parallax's salon rounds, its warden, and delegated-task nodes,
+    # observed in the 2026-11-01 sweep's window.
+    "=== Your memory file ===", "<warden> You are parallax,",
+    "Delegated task node:delegated-task:",
 )
 WORKER_OPENERS = re.compile(
     r"^(?:You are (?:an|the) Opus(?: [0-9.]+)? delegated (?:build )?worker|"

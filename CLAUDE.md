@@ -142,8 +142,8 @@ to relay, not a line to skim past; spec/40 has the reasoning.
 
 **Some prompt text is not in the bundle at all.** A GrowthBook flag can carry
 a *string*, and CC will render it in place of the text you read in the binary —
-the Agent tool's `## When to use` section works exactly this way today
-(`tengu_lucky_cerf_text`, TODO 32). Such a section can be rewritten between two
+the Agent tool's `## When to use` section worked this way through 2.1.306
+(`tengu_lucky_cerf_text`, archived TODO 32). Such a section can be rewritten between two
 sessions with no release, no marker moving and no fragment changing, so neither
 a gate diff nor a marker check can see it. `ccctl.py flags` lists the
 client-data keys and says which it cannot classify; an unclassified one is a
@@ -152,8 +152,11 @@ question, not noise.
 **And since CC 2.1.280, a built-in plugin can replace a section or inject into
 every turn.** First-party plugins register hooks on `prompt.section` and
 `prompt.submit`; `responsive-mode` uses both to reinstate narrate-before-you-act
-(TODO 34). Each is gated by a `tengu_*` flag for availability and ships off by
-default, so this is a watch rather than a mask — but a plugin's text is in the
+(TODO 34). Availability flags and plugin enablement are separate: inspect
+`isAvailable`, `isOnByDefault` and `defaultEnabled`, including the registration
+default when the last is absent. `responsive-mode` explicitly starts disabled;
+the diff panel can load when available unless disabled. This is a watch rather
+than a blanket mask — but a plugin's text is in the
 bundle and reaches the model without passing through any fragment we patch. A
 new `isOnByDefault`/`registerPlugin` pair in a release is step 1 material.
 

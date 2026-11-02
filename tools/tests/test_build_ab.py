@@ -10,6 +10,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import build_ab
 
 
+# The public mirror carries neither the view nor the prompt map it is built
+# from (both are Anthropic's text), so there is nothing to check freshness of.
+@unittest.skipUnless(all((build_ab.ROOT / rel).is_file()
+                         for rel in set(build_ab.source_hashes()) | {'ab/data.json'}),
+                     'review view or its prompt map not in this tree')
 class ReviewFreshness(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

@@ -55,7 +55,11 @@ def check_release(root=ROOT):
     if overlay:
         if not (root / overlay).is_file():
             raise ValueError(f'Selected tweakcc overlay is missing: {overlay}')
-    elif release['tweakcc'].get('verifiedCcVersion') != release['ccVersion']:
+    elif (release['tweakcc'].get('verifiedCcVersion') != release['ccVersion']
+          and not release['tweakcc'].get('containerGap')):
+        # containerGap: the pinned tweakcc cannot write this release, so ccctl
+        # assembles without its patch set (TWEAKCC_CONTAINER_FLOORS); there is
+        # nothing of tweakcc's to verify on it.
         raise ValueError('Upstream tweakcc build lacks a verification for the selected CC release')
     if not release['stock']:
         raise ValueError('release.json records no pristine binary hash for any platform')

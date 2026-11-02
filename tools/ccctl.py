@@ -29,6 +29,7 @@ the server).
 """
 
 import argparse
+from contextlib import contextmanager
 import difflib
 import functools
 import hashlib
@@ -37,6 +38,7 @@ import os
 import re
 import shlex
 import shutil
+import socket
 import struct
 import subprocess
 import sys
@@ -1380,6 +1382,17 @@ SUBAGENT_DELEGATION_OPT_IN = (
     "or a skill explicitly asks you to delegate further. A task assignment alone is not that opt-in. "
     "This restriction takes precedence over the delegation guidance below.")
 
+def prompt_renderer_registries(blob):
+    """2.1.312 separates captured decisions from shared section renderers.
+
+    Only accept the complete renderer registry, never a similarly named
+    property in a request/config object. The caller still requires uniqueness.
+    """
+    return [m for m in re.finditer(
+        rb'function [\w$]+\(e,n,r\)\{return\{communication:[^{}]+\}\}', blob)
+        if all(key in m.group(0) for key in (
+            b'contextManagement:', b'reducesDelegation:', b'servedForEffort:', b'writesForUser:'))]
+
 
 def plan_adhocs(blob):
     """Re-derive the tranche's adhoc patches against THIS build's minified
@@ -1392,7 +1405,9 @@ def plan_adhocs(blob):
     the block" when the prose was byte-identical — a false MANUAL that only
     a hand-grep of the binary could clear."""
     plan = []
-    # 2.1.303's temporal_hare experiment selects alternate system/tool bodies
+    registries = prompt_renderer_registries(blob)
+    registry = registries[0].group(0) if len(registries) == 1 else b''
+    # temporal_hare (2.1.301+) selects alternate system/tool bodies
     # before our fragments. Both host caches use this one predicate. Disable
     # it at the source, including compiled-only/client-data arms (spec/15).
     item = {"name": "lean-rewrite-off", "kind": "adhoc"}
@@ -1431,17 +1446,45 @@ def plan_adhocs(blob):
     # flag `tengu_idempotent_wolf`), which is not a delegation prohibition and
     # agrees with the delivering-work fragment, so the cut removes the server
     # text and keeps the fallback (notes/2026-10-08-win32-2.1.294.md §2).
+    #
+    # Between 2.1.303 and 2.1.310 the heron_brook value became memoized once
+    # per assembly and handed to the server-text function:
+    # `()=>apply(cached())??fallback`, where `cached` is the same accessor
+    # opus5_reduced_delegation reads. Same semantics, so the same cut
+    # (notes/2026-10-25-upstream-2.1.310-preview.md).
     m1n = ident_led(
         rb'([\w$]+)\("opus5_reduced_delegation",\(\)=>\{'
         rb'if\(![\w$]+\([\w$]+\)\)return null;'
         rb'if\(![\w$]+\("tengu_slate_bittern",!0\)\)return null;'
-        rb'let ([\w$]+)=[\w$]+\(\)\?\.value;'
+        rb'let ([\w$]+)=([\w$]+)\(\)\?\.value;'
         rb'if\(\2\?\.includes\([\w$]+\)\|\|\2\?\.includes\([\w$]+\)\)return null;'
         rb'return [\w$]+\}\),'
-        rb'\1\("heron_brook",\(\)=>[\w$]+\(\)(?:\?\?([\w$]+\([\w$,]*\)))?\),'
+        rb'\1\("heron_brook",\(\)=>[\w$]+\((?:\3\(\))?\)(?:\?\?([\w$]+\([\w$,]*\)))?\),'
         rb'\1\("brook_heron",\(\)=>[\w$]+\([\w$]+\)\)', blob,
         b'("opus5_reduced_delegation",()=>{')
-    if len(m1s) == 1 and not m1n:
+    # 2.1.312 captures booleans/tagged server facts and renders them later.
+    # Cut the three renderers together, preserving Haiku early-stopping.
+    m1r = list(re.finditer(
+        rb'reducesDelegation:\(([\w$]+)\)=>\1\?[\w$]+:null,'
+        rb'served:([\w$]+),servedForEffort:\(([\w$]+)\)=>\3,', registry))
+    if len(m1r) == 1 and not m1s and not m1n:
+        m = m1r[0]
+        served = list(re.finditer(
+            rb'function ' + re.escape(m.group(2))
+            + rb'\(e\)\{switch\(e.kind\)\{case"served":return e.text;'
+              rb'case"early-stopping":return ([\w$]+);case"none":return null\}\}', blob))
+        if len(served) == 1 and blob.count(m.group(0)) == 1:
+            arg, _, effort = (g.decode() for g in m.groups())
+            early = served[0].group(1).decode()
+            # Keep the cross-version delegation-cut marker used by status.
+            new = (f'reducesDelegation:function({arg}){{return null;let t=0}},'
+                   f'served:({arg})=>{arg}.kind==="early-stopping"?{early}:null,'
+                   f'servedForEffort:({effort})=>null,').encode()
+            item.update(status="AUTO", old=m.group(0), new=new)
+        else:
+            item.update(status="MANUAL", reason="tagged delegation renderer changed or is ambiguous",
+                        fix="trace the served/early-stopping cases before suppressing server guidance")
+    elif len(m1s) == 1 and not m1n:
         m1 = m1s[0]
         fn, acc = m1.group(1).decode(), m1.group(2).decode()
         item.update(status="AUTO",
@@ -1449,7 +1492,7 @@ def plan_adhocs(blob):
                     new=(f"function {fn}(e){{return null;let t={acc}()?.tengu_heron_brook;").encode("latin-1"))
     elif len(m1n) == 1 and not m1s:
         section = m1n[0].group(1).decode()
-        fallback = (m1n[0].group(3) or b"null").decode("latin-1")
+        fallback = (m1n[0].group(4) or b"null").decode("latin-1")
         new1 = (f'{section}("opus5_reduced_delegation",function(){{return null;let t=0}}),'
                 f'{section}("heron_brook",()=>{fallback}),'
                 f'{section}("brook_heron",()=>null)').encode("latin-1")
@@ -1673,18 +1716,32 @@ def plan_adhocs(blob):
     # when it matters to me"), which is also its legal exit. The form sentence
     # is his "no house format" rule. A style may still change both.
     # Evidence: notes/2026-09-21-length-regime.md.
+    #
+    # 2026-10-29, operator: the opening "The person reading this was elsewhere
+    # while you worked" had lost the scope spec/15 §5 gave it ("After a run of
+    # many tool calls, assume they were elsewhere") and made every reply a
+    # report to an absent reader. In a live T3 Code ideation session that gave
+    # briefings with four batched decisions; it only turned conversational
+    # after he typed "for planning and ideation, i need us to *chat*". His
+    # verdict on the sentence: "pure confabulation based on inference of me
+    # naming the fact that I'm often between a lot of sessions. that doesn't
+    # mean that when i'm in live in a session that goes back and forth that
+    # means that i'd want 5098273847 tokens of output nobody wants to read".
+    # The absent reader is now conditional on a run of work, and the live case
+    # has its own paragraph. spec/15 §5.8.
     FLOOR = (
         "# How to report back\\n\\n"
-        "The person reading this was elsewhere while you worked. The longer you work, "
-        "the less of it they see: after a run of many tool calls, the last message is "
-        "the only part they read, often hours later, against several other windows. "
-        "Every name, number and piece of shorthand that arrived during the work is new "
-        "to them.\\n\\n"
+        "The longer you work, the less of it they see: after a run of many tool calls, "
+        "the last message is often the only part they read, sometimes hours later, "
+        "beside other sessions. Every name, number and piece of shorthand that arrived "
+        "during the work is new to them.\\n\\n"
         "So open with where things stand, and name the thing you worked on. If they read "
         "two sentences and stop, they should know whether to act. Then, in a few "
         "short lines, what changed and what it touched: which repos, which remotes, "
-        "which live systems. Then, as one-line bullets, what happens if they do nothing "
-        "\\u2014 each one a consequence, not an explanation, and none carrying the fix. "
+        "which live systems. Then, only when something would actually happen if they do "
+        "nothing, say it as one-line bullets \\u2014 each one a consequence, not an "
+        "explanation, and none carrying the fix. When nothing would, leave them out: a "
+        "slot filled for its own sake is performance. "
         "Suggestions and offers come last, where they can be skipped, and as statements, "
         "not questions. An offer is for work outside what the task already authorizes; a "
         "step inside it is started, and the message says it is running. How the work was "
@@ -1695,6 +1752,17 @@ def plan_adhocs(blob):
         "analysis worth keeping goes in `reports/` in the active repo with one line "
         "pointing at it \\u2014 and most turns need none. They will ask for detail when "
         "it matters to them.\\n\\n"
+        "When the two of you go back and forth instead, planning, ideating or deciding "
+        "something together, they read as you write. None of that report shape applies. "
+        "Write a turn in a conversation: a few sentences, your view, and the one "
+        "question that matters next. Decisions come one at a time, as the conversation "
+        "reaches them.\\n\\n"
+        "A `[session]` line at session start names the machine and whether the project "
+        "is day-job or private work, derived from hostname and git remotes. It sets the "
+        "default between those two cases; the conversation itself decides. When it says "
+        "UNRECOGNIZED, UNKNOWN, MIXED or FAILED, contradicts what CLAUDE.md or the work shows, or "
+        "is missing, go by what you can see. Say so in one line of your first reply, "
+        "naming what you saw, so the derivation gets fixed. Once, not every turn.\\n\\n"
         "The final message always reaches them. Prose written earlier in the turn may go "
         "out on a channel their transport drops, and you cannot tell from here which "
         "happened. So say what they need in the final message, once, and never point "
@@ -1784,7 +1852,8 @@ def plan_adhocs(blob):
     # says he does not want. Bare "A style" keeps his noun, claims no position,
     # and is true on all three shapes. No marker or anti-marker quotes this
     # sentence.
-    # Three shapes, because three CC generations are live on the fleet at once.
+    # Historical renderer/section shapes remain supported across CC versions;
+    # 2.1.301's variant-keyed section is the additional shape below.
     #
     # 2.1.241 and earlier inline the template literal in the renderer itself.
     # 2.1.251 split it: the renderer became a null-guard that delegates to a
@@ -1861,6 +1930,15 @@ def plan_adhocs(blob):
     # renderer shapes are tried first and the section shape is the fallback,
     # so a build that still renders the style into the prompt keeps the
     # stronger placement and only a build that has removed it falls through.
+    # 2026-11-01, operator: a disposition file he can edit, in the system prompt
+    # ahead of the floor. Read at runtime so an edit reaches the next session
+    # with no re-apply. process.getBuiltinModule needs no import, so it does not
+    # depend on any minified name; a machine with no file gets nothing, and
+    # `status --delivered` proves the read when there is one. spec/40, runbook.
+    DISPOSITION_JS = ('(()=>{try{let e=process.env,t=process.getBuiltinModule("fs").readFileSync('
+                      'e.CLAUDE_DISPOSITION_FILE||(e.HOME||e.USERPROFILE)+"/.claude/disposition.md",'
+                      '"utf8").trim();return t?t+"\\n\\n":""}catch{return""}})()')
+    FLOOR_JS = f'{DISPOSITION_JS}+"{FLOOR}"'
     item = {"name": "disposition-floor-under-every-output-style", "kind": "adhoc"}
     m5s = list(re.finditer(rb"function ([\w$]+)\(e\)\{if\(e===null\)return null;"
                            rb"return`# Output Style: \$\{e\.name\}\n\$\{e\.prompt\}`\}", blob))
@@ -1869,43 +1947,81 @@ def plan_adhocs(blob):
                            rb"return ([\w$]+)\(e\.name,e\.prompt\)\}", blob))
     m5c = ident_led(rb'([\w$]+)\("context_management",\(\)=>([\w$]+)\),', blob,
                     b'("context_management",()=>')
-    # 2.1.303 keys this section by the rewrite suffix and selects its body.
-    # Append outside the choice, so the floor is unconditional on both paths.
+    # 2.1.301 keys sections by prompt variant and chooses the rewritten or
+    # original body. Preserve that expression; the floor follows either body.
     m5r = ident_led(
-        rb'([\w$]+)\(`context_management\$\{[\w$]+\}`,\(\)=>'
+        rb'([\w$]+)\(`context_management\$\{([\w$]+)\}`,\(\)=>'
         rb'([\w$]+\?[\w$]+:[\w$]+)\),', blob, b'(`context_management${')
+    m5v = list(re.finditer(rb'contextManagement:\(\)=>(r\?[\w$]+:[\w$]+),systemMessages:', registry))
     if len(m5s) == 1:
         fn = m5s[0].group(1).decode()
         old5 = m5s[0].group(0)
         new5 = (f'function {fn}(e){{return(e===null?"":"# Output Style: "+e.name+"\\n"'
-                f'+e.prompt+"\\n\\n")+"{FLOOR}"}}').encode("latin-1")
+                f'+e.prompt+"\\n\\n")+{FLOOR_JS}}}').encode("latin-1")
         item.update(status="AUTO", old=old5, new=new5)
     elif len(m5n) == 1:
         var, fn, render = (g.decode() for g in m5n[0].groups())
         old5 = m5n[0].group(0)
         new5 = (f'var {var}="output_style";function {fn}(e)'
                 f'{{return(e===null?"":{render}(e.name,e.prompt)+"\\n\\n")'
-                f'+"{FLOOR}"}}').encode("latin-1")
+                f'+{FLOOR_JS}}}').encode("latin-1")
         item.update(status="AUTO", old=old5, new=new5)
     elif len(m5c) == 1:
         sec, body = (g.decode() for g in m5c[0].groups())
         old5 = m5c[0].group(0)
-        new5 = (f'{sec}("context_management",()=>{body}+"\\n\\n"+"{FLOOR}"),').encode("latin-1")
+        new5 = (f'{sec}("context_management",()=>{body}+"\\n\\n"+{FLOOR_JS}),').encode("latin-1")
         item.update(status="AUTO", old=old5, new=new5)
     elif len(m5r) == 1:
-        old5 = m5r[0].group(0)
-        body = m5r[0].group(2)
-        new5 = old5.replace(b'=>'+body, b'=>('+body+b')+"\\n\\n"+"'+FLOOR.encode("latin-1")+b'"', 1)
+        sec, suffix, body = (g.decode() for g in m5r[0].groups())
+        new5 = (f'{sec}(`context_management${{{suffix}}}`,()=>({body})'
+                f'+"\\n\\n"+{FLOOR_JS}),').encode("latin-1")
+        item.update(status="AUTO", old=m5r[0].group(0), new=new5)
+    elif len(m5v) == 1 and blob.count(m5v[0].group(0)) == 1:
+        old5 = m5v[0].group(0)
+        body = m5v[0].group(1)
+        new5 = old5.replace(b'=>'+body, b'=>('+body+b')+"\\n\\n"+'+FLOOR_JS.encode('latin-1'), 1)
         item.update(status="AUTO", old=old5, new=new5)
     else:
         item.update(status="MANUAL",
                     reason=f"output-style floor anchor matches {len(m5s)}x inline / "
-                           f"{len(m5n)}x delegating / {len(m5c)}x section-list / {len(m5r)}x rewrite-list — "
+                           f"{len(m5n)}x delegating / {len(m5c)}x section-list / "
+                           f"{len(m5r)}x variant-section / {len(m5v)}x renderer-registry — "
                            "expected exactly 1 of one shape",
                     fix="upstream changed how the selected output style reaches the prompt; "
                         "re-derive against the shared section list — either the style renderer "
                         "and its single caller, or an always-present section to carry the floor "
                         "(spec/15-reporting-contract.md section 5.2)")
+    plan.append(item)
+
+    # ---- turn-rule-file (operator, 2026-11-01)
+    #
+    # The per-turn output-style reminder is the only prompt text that sits next
+    # to the moment of writing. Replays of a report that failed under the whole
+    # floor changed shape only when a rule was placed here (notes/2026-11-01-
+    # active-floor-read.md). A custom style cannot set this line, so the renderer
+    # reads ~/.claude/turn-rule.md at runtime, as the floor reads the disposition
+    # file. No style selected means no line, and no file means nothing added.
+    # Concatenation, not a template literal: see the floor's `$` note above.
+    item = {"name": "turn-rule-file", "kind": "adhoc"}
+    TURN_RULE_JS = ('(()=>{try{let e=process.env,t=process.getBuiltinModule("fs").readFileSync('
+                    'e.CLAUDE_TURN_RULE_FILE||(e.HOME||e.USERPROFILE)+"/.claude/turn-rule.md",'
+                    '"utf8").trim();return t?" "+t:""}catch{return""}})()')
+    # The stock fallback sentence is asserted by digest (TURN_REMINDER_FALLBACK),
+    # not quoted, and carried into the replacement as the bytes found.
+    m_rule = [m for m in re.finditer(
+        rb'content:`\$\{([\w$]+)\(e\.style\)\} output style is active\. \$\{e\.turnReminder\?\?'
+        rb'("[^"`]{1,200}")\}`,isMeta:!0', blob)
+        if TURN_REMINDER_FALLBACK.matches(m.group(2))]
+    if len(m_rule) == 1:
+        fn, fallback = m_rule[0].group(1), m_rule[0].group(2)
+        item.update(status="AUTO", old=m_rule[0].group(0),
+                    new=b'content:' + fn + b'(e.style)+" output style is active. "+(e.turnReminder??'
+                        + fallback + b')+' + TURN_RULE_JS.encode("latin-1") + b',isMeta:!0')
+    else:
+        item.update(status="MANUAL",
+                    reason=f"per-turn output-style reminder matches {len(m_rule)}x, expected 1",
+                    fix="upstream changed how the output_style attachment renders; re-derive "
+                        "where its turnReminder is turned into message text")
     plan.append(item)
 
     item = {"name": "lean-models-get-the-communication-fragment", "kind": "adhoc"}
@@ -1916,9 +2032,15 @@ def plan_adhocs(blob):
     # full-communication branch, and calls the lean predicate directly in the
     # following one-line code-comment branch. Derive that exact predicate from
     # the selector instead of guessing through the accessor implementation.
+    # Between 2.1.303 and 2.1.310 the brief-mode test moved out of the
+    # final-message predicate into a selector parameter:
+    # `let r=final(m,s)&&!brief;` — optional group 7 carries that suffix.
     m3n = list(re.finditer(
         rb"if\(([\w$]+)\(([\w$]+),([\w$]+)\)\|\|([\w$]+)\(\2\)\)"
-        rb"\{let ([\w$]+)=([\w$]+)\(\2,\3\);return`# Communicating with the user", blob))
+        rb"\{let ([\w$]+)=([\w$]+)\(\2,\3\)(&&![\w$]+)?;return`# Communicating with the user", blob))
+    m3v = list(re.finditer(
+        rb'if\(([\w$]+)\(r,e\)\|\|([\w$]+)\(r\)\)return [\w$]+\(r,e\)&&!n\?'
+        rb'"readable-final-message":"readable";return ([\w$]+)\(e\)\?"short":"standard"', blob))
     if len(m3s) == 1 and len(m4s) == 1 and not m3n:
         cond_a, cond_b, gap, gae = (g.decode() for g in m3s[0].groups())
         lean = m4s[0].group(1).decode()
@@ -1930,7 +2052,8 @@ def plan_adhocs(blob):
         else:
             item.update(status="AUTO", old=old3, new=new3)
     elif len(m3n) == 1 and not m3s:
-        cond_a, model, ctx, cond_b, gap, gae = (g.decode() for g in m3n[0].groups())
+        cond_a, model, ctx, cond_b, gap, gae = (g.decode() for g in m3n[0].groups()[:6])
+        brief = (m3n[0].group(7) or b"").decode("latin-1")
         tail = blob[m3n[0].end():m3n[0].end() + 10_000]
         lean_matches = list(re.finditer(
             rb'if\(([\w$]+)\(' + re.escape(ctx.encode("latin-1"))
@@ -1943,15 +2066,20 @@ def plan_adhocs(blob):
         else:
             lean = lean_matches[0].group(1).decode()
             old3 = (f"if({cond_a}({model},{ctx})||{cond_b}({model}))"
-                    f"{{let {gap}={gae}({model},{ctx});return`").encode("latin-1")
+                    f"{{let {gap}={gae}({model},{ctx}){brief};return`").encode("latin-1")
             new3 = (f"if({cond_a}({model},{ctx})||{cond_b}({model})||{lean}({ctx}))"
-                    f"{{let {gap}={gae}({model},{ctx});return`").encode("latin-1")
+                    f"{{let {gap}={gae}({model},{ctx}){brief};return`").encode("latin-1")
             if blob.count(old3) != 1:
                 item.update(status="MANUAL", reason=f"patched prefix is not unique ({blob.count(old3)}x)",
                             fix="widen the anchor; the selector shape changed in this build")
             else:
                 item.update(status="AUTO", old=old3, new=new3)
-    elif m3s or m3n:
+    elif len(m3v) == 1 and not m3s and not m3n:
+        old3 = m3v[0].group(0)
+        lean = m3v[0].group(3)
+        new3 = old3.replace(b'(r))return', b'(r)||'+lean+b'(e))return', 1)
+        item.update(status="AUTO", old=old3, new=new3)
+    elif m3s or m3n or m3v:
         item.update(status="MANUAL",
                     reason=f"communication-selector anchors match {len(m3s)}x legacy / {len(m3n)}x current",
                     fix="upstream restructured qAE's branches; re-trace which block each model family "
@@ -1990,24 +2118,23 @@ def plan_adhocs(blob):
     # NOOP, not MANUAL, when the anchor is absent. It is absent on 2.1.241,
     # which two machines still run, and it would be absent again if upstream
     # dropped the section — in both cases there is nothing to suppress and
-    # nothing wrong. This is the only target in the tranche whose correct
-    # state can be "not present".
+    # nothing wrong. A surviving telemetry/section anchor with an unknown
+    # renderer instead means locator drift and must be MANUAL.
     item = {"name": "willow-tern-writing-style-cut", "kind": "adhoc"}
-    m6s = list(re.finditer(rb"function ([\w$]+)\(e\)\{if\((?:[\w$]+\(e\)\|\|)?!([\w$]+)\(e\)\)return null;"
+    m6s = list(re.finditer(rb"function ([\w$]+)\(e\)\{if\((?:[\w$]+\(e\)\|\|)?!([\w$]+)\(e\)\)return(?: null|!1);"
                            rb'return ([\w$]+)\("tengu_willow_tern_applied"', blob))
     if len(m6s) == 1:
-        fn, gate, tel = (g.decode() for g in m6s[0].groups())
         old6 = m6s[0].group(0)
-        new6 = old6.replace((f'function {fn}(e){{').encode(),
-                           (f'function {fn}(e){{return null;').encode(), 1)
+        off = b'!1' if b'return!1;' in old6 else b'null'
+        new6 = old6.replace(b"{if(", b"{return " + off + b";if(", 1)
         item.update(status="AUTO", old=old6, new=new6)
     elif m6s:
         item.update(status="MANUAL", reason=f"willow_tern renderer matches {len(m6s)}x — ambiguous",
                     fix="the section renderer is duplicated in this build; inspect the unpacked JS "
                         "and decide which occurrence(s) to cut")
-    elif b'tengu_willow_tern_applied' in blob:
-        item.update(status="MANUAL", reason="willow_tern renderer exists but its guard changed",
-                    fix="trace the writing-style renderer and restore its unconditional early return")
+    elif b"tengu_willow_tern_applied" in blob:
+        item.update(status="MANUAL", reason="willow_tern renderer moved while its section remains",
+                    fix="trace the writing-style section and re-derive its renderer cut")
     else:
         item.update(status="NOOP",
                     reason="no willow_tern section in this build — nothing to suppress")
@@ -2119,10 +2246,15 @@ def plan_adhocs(blob):
     # replacement is 8 bytes longer; the writer takes length changes (as
     # git-commit-authority's does), so nothing is padded.
     item = {"name": "action-caution-outcome-line", "kind": "adhoc"}
-    m9s = list(re.finditer(rb'function [\w$]+\(e(?:,n=!1)?\)\{if\(![\w$]+\(e\)\)return null;'
-                           rb'(?:if\(n\)return [\w$]+;)?return"'
+    m9s = list(re.finditer(rb'function [\w$]+\(e(?:,([\w$]+)=!1)?\)'
+                           rb'\{if\(![\w$]+\(e\)\)return null;'
+                           rb'(?(1)if\(\1\)return [\w$]+;)return"'
                            + re.escape(ACTION_CAUTION_HEAD) + rb'(?:[^"\\]|\\.){0,1200}?'
                            + re.escape(ACTION_CAUTION_STOCK), blob))
+    m9s += list(re.finditer(
+        rb'function [\w$]+\(e,([\w$]+)\)\{if\(!e\)return null;'
+        rb'if\(\1\)return [\w$]+;return"' + re.escape(ACTION_CAUTION_HEAD)
+        + rb'(?:[^"\\]|\\.){0,1200}?' + re.escape(ACTION_CAUTION_STOCK), blob))
     if len(m9s) == 1 and blob.count(m9s[0].group(0)) == 1:
         old9 = m9s[0].group(0)
         item.update(status="AUTO", old=old9,
@@ -2228,6 +2360,11 @@ GIT_COMPACT = StockSentence(
 # linux-x64. In the bundle it follows an interpolated intro, `${x}. `.
 AGENT_PREAMBLE = StockSentence(
     b"Each agent type has", 68, "c04a05f67a159e4ba0ac4dc12acde4d5c8eb706b3f1592ead2d8904dab1d0a4a")
+# The per-turn output-style reminder's fallback, quotes included, the one
+# turn-rule-file keeps in front of the operator's rule. 60 bytes, measured on
+# stock 2.1.312.
+TURN_REMINDER_FALLBACK = StockSentence(
+    b'"Remember to', 60, "f690a057189dabfbe411136687ac13cef89a0c259ed556323833adf29ef47d2c")
 AGENT_PREAMBLE_LEAD = re.compile(rb"\$\{[\w$]+\}\. $")
 # ASCII only: adhoc_patch refuses high bytes, and the payload lands inside a
 # template literal, so no backtick and no "${".
@@ -2611,6 +2748,39 @@ def clone_head(clone):
     return head.stdout.strip(), bool(dirty.stdout.strip())
 
 
+# CC builds whose container an older tweakcc cannot write: (first CC version,
+# the tweakcc commit that fixed it, the newest tweakcc release without it, why).
+# Unlike a rejected feature patch this is not survivable by trying: on 2.1.310
+# tweakcc 4.4.0 grows past 4 GB within a second and stalls the machine, and its
+# repack would overwrite retained bytecode if it got that far (upstream's
+# measurement, tweakcc PR 1053; not reproduced here on purpose). ccctl's own
+# writer is unaffected (2.1.310 staged with it: 27/27 markers, every changed
+# module parses, launches; notes/2026-10-25-upstream-2.1.310-preview.md).
+TWEAKCC_CONTAINER_FLOORS = (
+    ("2.1.310", "c44c88c3c2a1289aab06c917c2a1c683ebbae947", "4.4.0",
+     "CC 2.1.310 lays Bun bytecode out as one shared slab, which tweakcc before "
+     "PR 1053 copies once per module (~223 GB)"),
+)
+
+
+def tweakcc_container_gap(target):
+    """Why the installed tweakcc must not write a CC `target` binary, or None.
+    A local clone answers by ancestry; a published install by version."""
+    for first, fix, last_bad, why in TWEAKCC_CONTAINER_FLOORS:
+        if ver_key(target) < ver_key(first):
+            continue
+        clone = tweakcc_clone()
+        if clone is not None:
+            r = run(["git", "-c", "safe.directory=%s" % clone.as_posix(), "-C", str(clone),
+                     "merge-base", "--is-ancestor", fix, "HEAD"])
+            if r.returncode == 0:
+                continue
+        elif ver_key(run([*tweakcc_node(), "--version"]).stdout.strip()) > ver_key(last_bad):
+            continue
+        return f"{why}; the installed tweakcc does not contain {fix[:8]}"
+    return None
+
+
 def tweakcc_build_state(cfg, target):
     """Does the tweakcc that is about to run carry this repo's overlay for CC
     `target`? Advisory, never blocking.
@@ -2629,6 +2799,12 @@ def tweakcc_build_state(cfg, target):
         # and this is a diagnostic: it reports or stays quiet, it never decides.
         return {**blank, "verdict": "unknown",
                 "line": "no repo configured here — overlay state unknown"}
+    gap = tweakcc_container_gap(target)
+    if gap:
+        return {**blank, "verdict": "container-gap", "line": gap,
+                "fix": "assemble skips tweakcc's patch set on this build (no in-CC banner; our "
+                       "patches are unaffected). Review and pin a tweakcc that contains the fix "
+                       "(spec/45, release.json) to get the banner back"}
     inv = overlay_inventory(cfg)
     twk = run([*tweakcc_node(), "--version"]).stdout.strip()
     build = str(repo_dir(cfg) / "tools" / "build_local_tweakcc.py")
@@ -2980,31 +3156,6 @@ def park_patched_backup(markers):
     return parked
 
 
-def refresh_tweakcc_backup(staged, markers):
-    """Give tweakcc the exact staged pristine, retaining a differing backup.
-
-    Upstream 4.4.0 refuses a backup from another CC version. Its config may
-    still name an older version while a stage is being tested; that is not a
-    reason to drop all feature patches. The caller supplies the verified stock
-    stage, never the installed patched launcher. Park until activation verifies.
-    """
-    if not is_stock(staged, markers):
-        die("refusing to seed tweakcc's backup from a non-pristine stage")
-    backup = TWEAKCC_DIR / "native-binary.backup"
-    def digest(path):
-        with Path(path).open('rb') as stream:
-            return hashlib.file_digest(stream, 'sha256').digest()
-    if backup.exists():
-        if backup.stat().st_size == staged.stat().st_size and digest(backup) == digest(staged):
-            return None
-        parked = backup.with_name(backup.name + '.stock-' + str(time.time_ns()))
-        os.rename(backup, parked)
-    else:
-        parked = None
-    safe_put(staged, backup)
-    return parked
-
-
 def feature_patch_ids(output):
     """Read tweakcc's own feature inventory without selecting prompt IDs."""
     plain = re.sub(r"\x1b\[[0-9;]*m", "", output)
@@ -3012,6 +3163,48 @@ def feature_patch_ids(output):
     if "patches-applied-indication" not in ids:
         raise ValueError("tweakcc --list-patches format changed; cannot isolate feature patches")
     return list(dict.fromkeys(ids))
+
+
+@contextmanager
+def staged_tweakcc_backup(staged):
+    """Give tweakcc a matching staging backup; restore live recovery on exit.
+
+    Upstream 4.4 refuses to restore a previous release over an incoming one.
+    Its startup can reach restore before refreshing the backup. The caller
+    supplies a pristine stage, so isolate that backup just like its config and
+    prompt files. Never advertise the incoming release as live recovery.
+    """
+    backup = TWEAKCC_DIR / "native-binary.backup"
+    with tempfile.TemporaryDirectory(prefix="ccctl-backup-", dir=TWEAKCC_DIR) as temp:
+        previous = Path(temp) / "previous"
+        if backup.exists():
+            os.replace(backup, previous)
+        try:
+            shutil.copy2(staged, backup)
+            yield
+        finally:
+            if previous.exists():
+                os.replace(previous, backup)
+            else:
+                backup.unlink(missing_ok=True)
+
+
+def promote_restore_backup(version, markers):
+    """After verified activation, make tweakcc restore name this release too."""
+    if cc_version() != version:
+        die("refusing to promote an incoming backup before that release is installed")
+    # place() may have moved the staging pristine into the versions directory.
+    pristine = pristine_source(version, markers)
+    if pristine is None:
+        die("installed release has no independently validated pristine for recovery")
+    backup = TWEAKCC_DIR / "native-binary.backup"
+    fd, name = tempfile.mkstemp(prefix="ccctl-restore-", dir=TWEAKCC_DIR)
+    os.close(fd)
+    try:
+        shutil.copy2(pristine, name)
+        os.replace(name, backup)
+    finally:
+        Path(name).unlink(missing_ok=True)
 
 
 def tweakcc_apply_to(staged, markers):
@@ -3054,7 +3247,6 @@ def tweakcc_apply_to(staged, markers):
     if saved is None:
         die(f"no {cfgfile} — run tweakcc once interactively to create its config")
     park_patched_backup(markers)
-    refresh_tweakcc_backup(staged, markers)
     moved = False
     try:
         data = json.loads(saved)
@@ -3075,7 +3267,8 @@ def tweakcc_apply_to(staged, markers):
         # Hiding the prompt directory alone is insufficient: tweakcc startup
         # regenerates it, then tries to rewrite every stock prompt. Select the
         # dynamic feature inventory; tweakcc still honors each config condition.
-        r = run([*tweakcc_node(), "--apply", "-y", "--patches", ",".join(ids)], timeout=900)
+        with staged_tweakcc_backup(staged):
+            r = run([*tweakcc_node(), "--apply", "-y", "--patches", ",".join(ids)], timeout=900)
         out = (r.stdout + r.stderr).strip()
         # Keep diagnostics even when tweakcc returns success with partial
         # failures; the banner alone cannot identify which feature drifted.
@@ -3185,7 +3378,14 @@ def assemble(cfg, version, source, plan, stock=False):
         die(f"assemble(stock=True) given {len(plan)} plan items — refusing to half-build an arm")
     staged = stage_copy(version, source)
     fallback = None
-    if cfg.get("tweakccPatches", TWEAKCC_PATCHES_DEFAULT):
+    gap = (tweakcc_container_gap(version)
+           if cfg.get("tweakccPatches", TWEAKCC_PATCHES_DEFAULT) else None)
+    if gap:
+        # Not a rejection to discover by trying — see TWEAKCC_CONTAINER_FLOORS.
+        # Assemble without the patch set, exactly as the fallback below would.
+        print(f"  tweakcc's patch set skipped before running: {gap}")
+        fallback = gap
+    elif cfg.get("tweakccPatches", TWEAKCC_PATCHES_DEFAULT):
         if stock:
             # No re-location step: there is no plan to re-locate, and a target
             # that stopped locating after tweakcc's pass says nothing about a
@@ -3294,7 +3494,7 @@ def assemble(cfg, version, source, plan, stock=False):
     # tweakcc fix retires the note by itself.
     state = load_json(STATE, {})
     if fallback:
-        state["tweakccFallback"] = {"ccVersion": version, "reason": fallback,
+        state["tweakccFallback"] = {"ccVersion": version, "reason": fallback, "skipped": bool(gap),
                                     "when": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")}
         # Name the most likely cause rather than leaving the next reader to
         # correlate a stack trace with a build they cannot see. The overlay
@@ -3310,12 +3510,14 @@ def assemble(cfg, version, source, plan, stock=False):
             bs = {"verdict": "unknown", "line": f"overlay state unreadable ({exc!r})", "fix": None}
         hint = ("" if bs["verdict"] in QUIET_BUILD else
                 f"\n- likely cause ({bs['verdict']}): {bs['line']}\n- fix: {bs['fix']}")
-        log_entry("tweakcc-fallback", f"- CC `{version}`: tweakcc's patch set was rejected by this "
+        log_entry("tweakcc-fallback", f"- CC `{version}`: tweakcc's patch set was "
+                                      f"{'skipped for' if gap else 'rejected by'} this "
                                       f"build; assembled without it.\n- reason: {fallback}{hint}\n"
                                       f"- consequence: no in-CC banner on this binary. "
                                     + (f"Verified stock: 0/{len(markers)} markers.\n" if stock else
                                        f"Our markers verified {len(markers)}/{len(markers)} as usual.\n")
-                                    + (f"- if this platform keeps rejecting it, that belongs in "
+                                    + ("" if gap else
+                                       f"- if this platform keeps rejecting it, that belongs in "
                                        f"`TWEAKCC_PATCHES_DEFAULT`, not in a config file."))
         print("  NOTE: this binary has no tweakcc banner — the in-CC indicator is unavailable on it.")
         if bs["verdict"] not in QUIET_BUILD:
@@ -3599,7 +3801,7 @@ def analyze_core(cfg, target_ver):
         "tweakcc": {"installed": twk_now, "npmLatest": twk_new, "promptData": pstat},
         "tweakccBuild": build_state,
         "overall": overall, "verdicts": verdicts,
-        "planTotal": len(frag_plan) + len(adhoc_plan),
+        "planTotal": sum(i["status"] != "NOOP" for i in frag_plan + adhoc_plan),
         "baseSnapshot": "MISSING" if base_missing else "present",
         "promptMap": pmap, "instructionScan": scan,
         "pristine": str(pristine), "repoCommit": repo_commit(cfg),
@@ -3911,6 +4113,10 @@ def cmd_status(args):
         return cmd_live(args)
     if getattr(args, "delivered", False):
         return cmd_delivered(args)
+    if getattr(args, "quiet", False):
+        # First, before the binary scan, so a slow or failing check below
+        # cannot take the session line down with it.
+        session_context_quiet()
     cfg = require_cfg()
     binary = claude_binary()
     ver = cc_version()
@@ -4142,7 +4348,9 @@ def cmd_status(args):
             # it. Our markers still verified; the indicator is simply not
             # available on this binary. Reporting that as a disagreement would
             # train the operator to ignore a line that means something.
-            print(f"in-CC indicator: unavailable — tweakcc's patch set was rejected when this "
+            how = ("skipped (the installed tweakcc cannot write this build)"
+                   if fell_back.get("skipped") else "rejected")
+            print(f"in-CC indicator: unavailable — tweakcc's patch set was {how} when this "
                   f"binary was built ({fell_back['when'][:10]}); ours applied without it")
         else:
             print(f"in-CC indicator: tweakcc banner {'present' if banner else 'ABSENT'}"
@@ -4258,6 +4466,19 @@ def cmd_status(args):
         # what an operator runs when something is already wrong.
         print(f"server arms    : unreadable ({exc!r})")
     print(f"settings       : {machine_settings_line()[1]}")
+    try:
+        line = session_context(project=os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+        print(f"session line   : {line[len('[session] '):]}")
+    except Exception as exc:                               # noqa: BLE001
+        print(f"session line   : derivation FAILED ({exc!r})")
+    where = disposition_file()
+    print(f"disposition    : {where}" + (f" -> {where.resolve()}" if where.is_symlink() else "")
+          + (f", {where.stat().st_size} bytes, read at session start" if where.exists()
+             else " absent, nothing added to the prompt"))
+    where = turn_rule_file()
+    print(f"turn rule      : {where}" + (f" -> {where.resolve()}" if where.is_symlink() else "")
+          + (f", {where.stat().st_size} bytes, read each turn" if where.exists()
+             else " absent, nothing added to the reminder"))
     verdict, detail = tripwire_state()
     print(f"tripwire       : {verdict if verdict == 'ok' else verdict.upper()} — {detail}")
     if verdict == "ok":
@@ -4559,6 +4780,7 @@ def cmd_update(args):
                         "when": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")}
     save_json(STATE, state)
     post_verify(cfg, target)
+    promote_restore_backup(target, repo_markers(cfg))
     state["applied"]["verified"] = True
     save_json(STATE, state)
     snapshot(target)
@@ -4658,9 +4880,10 @@ SERVER_ARMS = {
     # of item 27 rebuilt as a plugin, so an arm arriving is news.
     "tengu_quiet_ember": (None, "responsive-mode plugin: narrate before every tool call "
                                 "(off by default; the flag only offers it)", "stock"),
-    # The other four built-in plugins of 2.1.280, same shape: the flag makes the
-    # plugin available, `enabledPlugins["<name>@builtin"]` in settings turns it
-    # on. None carries prompt text of its own, but `agents-md` changes WHICH
+    # Availability is separate from enablement: unlike responsive-mode's
+    # explicit defaultEnabled:false, the diff panel can load when available
+    # unless settings disable it. None of these carries prompt text of its
+    # own, but `agents-md` changes WHICH
     # instruction files load — where a project has no CLAUDE.md it loads
     # AGENTS.md instead — and this repo's CLAUDE.md is a symlink to AGENTS.md
     # (TODO 34). Its flag was measured ARMED on win32 on 2026-09-24 while the
@@ -4668,7 +4891,7 @@ SERVER_ARMS = {
     # (notes/2026-09-24-win32-2.1.280.md). Rows so a per-machine arm is a delta.
     "tengu_agents_md_mod": (None, "agents-md plugin: AGENTS.md as project instructions "
                                   "(off by default; the flag only offers it)", "stock"),
-    "tengu_quiet_dolphin": (None, "diff plugin: the diff panel (off by default; the flag only offers it)",
+    "tengu_quiet_dolphin": (None, "diff plugin: panel can load when available unless disabled",
                             "stock"),
     "tengu_mermaid_mod": (None, "mermaid plugin: fences drawn as box text "
                                 "(off by default; the flag only offers it)", "stock"),
@@ -4707,6 +4930,10 @@ SERVER_ARMS = {
     "tengu_luminous_locket": ("CLAUDE_CODE_SUBAGENT_CONFIG_WARNING",
                               "startup notice that the user's config asks for subagents, "
                               "after a classifier call over CLAUDE.md, skills and agents", "stock"),
+    "tengu_joyful_otter": (None, "easel plugin: charts and automatic MCP-result charts "
+                                 "(off by default; the flag only offers it)", "stock"),
+    "tengu_jaunty_plum": (None, "output-limit attachment: thinking and reply share a token "
+                                "budget; deduplicated per model/text", "stock"),
 }
 
 
@@ -4906,7 +5133,7 @@ CATALOGUE_GATE_DEFAULTS = {
 # count as drift.
 GATED_CAPABILITIES = (frozenset(MODEL_GATES)
                       | frozenset(c for caps, _v in MODEL_GATE_CLAUSES.values() for c in caps)
-                      | {"lucky_cerf", "amber_astrolabe"})
+                      | {"lucky_cerf", "amber_astrolabe", "temporal_hare"})
 
 
 def catalogue_gate_defaults(blob):
@@ -5940,6 +6167,8 @@ def capture_request(model, shape, binary=None, timeout=120, turns=0):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     proj = cc_project_dir(cwd)
     env = capture_env({**env_extra,
+                       # Local capture must work even when cached OAuth has expired.
+                       "ANTHROPIC_API_KEY": "ccctl-local-capture",
                        "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{srv.server_address[1]}"})
     launcher = ([str(b) for b in binary] if isinstance(binary, (list, tuple))
                 else [str(binary or claude_binary())])
@@ -6046,6 +6275,44 @@ def delivered_style(messages):
     return m.group(1).strip() if m else None
 
 
+def disposition_file():
+    """The file the floor reads at runtime, resolved as the patched binary does."""
+    return Path(os.environ.get("CLAUDE_DISPOSITION_FILE")
+                or Path.home() / ".claude" / "disposition.md")
+
+
+def disposition_probe():
+    """A line of the disposition file to look for in a request, or None."""
+    try:
+        return next((ln.strip() for ln in disposition_file().read_text(encoding="utf-8").splitlines()
+                     if ln.strip()), None)
+    except OSError:
+        return None
+
+
+def turn_rule_file():
+    """The file the per-turn reminder reads at runtime."""
+    return Path(os.environ.get("CLAUDE_TURN_RULE_FILE")
+                or Path.home() / ".claude" / "turn-rule.md")
+
+
+def turn_rule_probe():
+    try:
+        return turn_rule_file().read_text(encoding="utf-8").strip()[:60] or None
+    except OSError:
+        return None
+
+
+def turn_rule_verdict(reqs, probe):
+    """(verdict, detail) for the turn-rule file across a session's requests."""
+    texts = [request_texts(r)[1] for r in reqs]
+    if any(probe in t for t in texts):
+        return "DELIVERED", "per-turn reminder"
+    if not any("output style is active." in t for t in texts):
+        return "NOT IN SESSION", "no per-turn style reminder in this session"
+    return "MISSING", f"{turn_rule_file()} exists and its text is not in the reminder"
+
+
 def marker_owners(cfg, markers, adhoc_plan):
     """{marker: target id} for every marker that is prompt prose. Fragment
     markers are found in the edit bodies, adhoc ones in the replacement bytes
@@ -6074,7 +6341,7 @@ def stock_probes(entry, n=3):
     return [p[len(p) // 2 - 25: len(p) // 2 + 25] for p in runs[:n]]
 
 
-def delivered_verdicts(req, owners, snapshot=None):
+def delivered_verdicts(req, owners, snapshot=None, disposition=None):
     """[(target id, verdict, detail)] for one captured request.
 
     DELIVERED       our text is in the request, every marker of it
@@ -6157,6 +6424,10 @@ def delivered_verdicts(req, owners, snapshot=None):
         else:
             rows.append((tid, "NOT IN SESSION",
                          "neither ours nor upstream's text for this slot is in the request"))
+    if disposition:
+        rows.append(("disposition-file", "DELIVERED" if disposition in system else "MISSING",
+                     "system prompt" if disposition in system
+                     else f"{disposition_file()} exists and its text is not in the system prompt"))
     return rows
 
 
@@ -6356,7 +6627,10 @@ def cmd_delivered(args):
                   + ")")
             print(f"    sections: {' | '.join(heads)}")
             verdicts, arms = {}, {}
-            for tid, verdict, detail in delivered_verdicts(req, owners, snap):
+            rows = delivered_verdicts(req, owners, snap, disposition_probe())
+            if turn_rule_probe():
+                rows.append(("turn-rule-file", *turn_rule_verdict(reqs, turn_rule_probe())))
+            for tid, verdict, detail in rows:
                 why = delivered_attribution(tid, data, env) if verdict == "DISPLACED" else None
                 if why:
                     # named, and still a finding: an arm that displaces our
@@ -6565,6 +6839,111 @@ def machine_settings_quiet():
     ok, text = machine_settings_line()
     if not ok:
         print(f"[ccctl] SETTINGS {text}")
+
+
+# Session context (operator, 2026-10-29): the session-start tripwire also tells
+# the model which machine it is on and whether the project is day-job or
+# private work, so the floor's two cases (a report after a run of work, a turn
+# in a live conversation) start from a sensible default. Derived, never
+# configured per machine: the hostname from the OS, the project kind from the
+# git remotes of CLAUDE_PROJECT_DIR, which CC sets for hook processes. The
+# remotes are read from .git/config directly, because a process start costs
+# ~100 ms on the work laptop. The floor tells the model what to do when this
+# says UNRECOGNIZED, contradicts what it sees, or is missing; this code's job is
+# only to say plainly which of those it is. Patterns mirror the includeIf list
+# in the operator's ~/.gitconfig (work identity default, personal for Forgejo and
+# github.com/[HANDLE]). A new host or org is one entry here.
+SESSION_MACHINES = {
+    "work-laptop": "the work laptop (Windows), usually several sessions in parallel",
+    "linux-workstation": "the private Kubuntu workstation",
+    "macos-laptop-lan": "the private MacBook Air",
+    # what macOS's gethostname() returns there; macos-laptop-lan is only its LAN name
+    "macos-laptop": "the private MacBook Air",
+}
+SESSION_REMOTES = (
+    ("day-job", ("dev.azure.com/employer-org", "dev.azure.com:v3/employer-org",
+                 "employer-org.visualstudio.com")),
+    ("private", ("forgejo-host", "github.com/owner/", "github.com:owner/")),
+)
+
+
+def git_remote_urls(start):
+    """Remote URLs of the repository containing `start`, read from its config
+    file; [] when there is none. Follows a worktree's or submodule's `.git`
+    file to the common directory."""
+    d = Path(start).resolve()
+    for cand in (d, *d.parents):
+        dot = cand / ".git"
+        if dot.is_dir():
+            gitdir = dot
+        elif dot.is_file():
+            m = re.match(r"gitdir:\s*(.+)", dot.read_text(encoding="utf-8", errors="replace").strip())
+            if not m:
+                return []
+            gitdir = (cand / m.group(1).strip()).resolve()
+            common = gitdir / "commondir"
+            if common.is_file():
+                gitdir = (gitdir / common.read_text(encoding="utf-8").strip()).resolve()
+        else:
+            continue
+        try:
+            text = (gitdir / "config").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return []
+        urls, in_remote = [], False
+        for line in text.splitlines():
+            s = line.strip()
+            if s.startswith("["):
+                in_remote = s.lower().startswith("[remote ")
+            elif in_remote:
+                m = re.match(r"url\s*=\s*(.+)", s, re.I)
+                if m:
+                    urls.append(m.group(1).strip().strip('"'))
+        return urls
+    return []
+
+
+def session_context(hostname=None, project=None):
+    """The one `[session]` line: machine and project kind, each either
+    recognized or marked UNRECOGNIZED/MIXED with the evidence it saw."""
+    host = (hostname if hostname is not None else socket.gethostname()).split(".")[0]
+    machine = SESSION_MACHINES.get(host.lower())
+    parts = [f"machine {host}: " + (machine or "UNRECOGNIZED hostname")]
+    project = project if project is not None else os.environ.get("CLAUDE_PROJECT_DIR")
+    if not project:
+        parts.append("project: UNKNOWN (CLAUDE_PROJECT_DIR not set)")
+    else:
+        name = Path(project).name or project
+        try:
+            urls = git_remote_urls(project)
+        except OSError as exc:
+            urls, err = [], exc.strerror or repr(exc)
+        else:
+            err = None
+        kinds = {kind for kind, pats in SESSION_REMOTES
+                 for u in urls for p in pats if p in u.lower()}
+        if err:
+            parts.append(f"project {name}: UNRECOGNIZED (git config unreadable: {err})")
+        elif not urls:
+            parts.append(f"project {name}: UNRECOGNIZED (no git remote)")
+        elif len(kinds) > 1:
+            parts.append(f"project {name}: MIXED (remotes match both day-job and private: "
+                         + ", ".join(urls) + ")")
+        elif kinds:
+            parts.append(f"project {name}: {kinds.pop()} work")
+        else:
+            parts.append(f"project {name}: a third-party clone (remote {urls[0]})")
+    return ("[session] " + "; ".join(parts)
+            + ". Derived from hostname and git remotes; patterns: SESSION_MACHINES and "
+            + f"SESSION_REMOTES in {Path(__file__).resolve().as_posix()}.")
+
+
+def session_context_quiet():
+    """Print the session line, never fail: a broken derivation says so."""
+    try:
+        print(session_context(), flush=True)
+    except Exception as exc:                                # noqa: BLE001
+        print(f"[session] derivation FAILED ({exc!r}) — machine and project kind unknown", flush=True)
 
 
 TRIPWIRE_SCRIPTS = ("ccctl.py", "cc-doctor.sh")
@@ -7077,13 +7456,14 @@ def human(n):
 
 def prune_nudge(markers):
     """One line after a swap, where the artifacts are actually created. It does
-    NOT prune: the moment right after a swap is exactly when the previous
-    binaries are most likely to be wanted. Surfacing the number is the job;
-    deciding to spend it is the operator's."""
+    NOT prune: the previous binary is needed until delivery checks pass.
+    The verifying agent then prunes superseded artifacts under spec/40's
+    retention policy; the protected recovery sources remain available."""
     try:
+        protected = prune_protected(markers)
         over = [f for name, files in parked_groups(markers)
-                for f in files[PRUNE_KEEP.get(name, 1):]]
-        stale = sum(f.stat().st_size for f in over if f.resolve() not in prune_protected(markers))
+                for f in [p for p in files if p.resolve() not in protected][PRUNE_KEEP.get(name, 1):]]
+        stale = sum(f.stat().st_size for f in over)
     except OSError:
         return
     if stale > 1e9:
@@ -7120,7 +7500,10 @@ def cmd_prune(args):
             elif survivors < keep:
                 why = f"newest {keep}"
             if why:
-                survivors += 1
+                # Protected sources are retained in addition to the budget,
+                # regardless of whether their mtime sorts first or last.
+                if f.resolve() not in protected:
+                    survivors += 1
                 print(f"  KEEP   {f.name:<44} {human(size):>10}  ({why})")
                 continue
             if args.dry_run:

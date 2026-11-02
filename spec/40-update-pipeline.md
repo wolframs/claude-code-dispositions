@@ -250,11 +250,11 @@ Two independent facts, both in the analyze report:
   then re-applies only its config-driven patch set — i.e. it wipes adhoc
   patches. The span engine never uses `--apply`; the legacy `tweakcc`
   engine option orders fragments-then-adhoc for this reason.
-- Since upstream 4.4.0, a backup from another CC version is refused. Before
-  the feature pass, ccctl seeds that backup from the verified staged pristine,
-  retaining any differing previous copy until verification. `prune` removes
-  the superseded stock backup after the round; the installed version's
-  independent pristine remains the recovery source. Regression and evidence:
+- Since upstream 4.4.0, a backup from another CC version is refused. The
+  feature pass gets the staged pristine as a temporary backup and the live
+  recovery file returns afterwards; see "Cross-version staging backup" below.
+  `prune` still removes `native-binary.backup.stock-*` files parked by the
+  earlier refresh mechanism. First observed on
   [Windows 2.1.303](../notes/2026-10-19-win32-2.1.303.md).
 - The backup is refreshed once per CC version — a fresh backup snapshots
   *whatever binary is live at that moment*, so a patched binary can poison
@@ -336,6 +336,31 @@ Per machine, once: copy `tools/ccctl.py` somewhere, `ccctl.py init <git-url>`
 (sparse clone), optionally edit `ccctl.json` (see the config table above).
 All three machines use `~/ccctl/` as the workspace.
 
+The disposition file is optional and per machine. The patched binary reads
+`~/.claude/disposition.md` when a session builds its prompt (or the path in
+`CLAUDE_DISPOSITION_FILE`) and puts the text ahead of the reporting floor. An edit
+reaches the next session with no re-apply. No file, nothing added. The public
+template is `disposition.example.md`; the operator's file is `private/disposition.md`,
+which never ships (`private/README.md`), and a machine takes it by linking it:
+
+    ln -s ~/Projects/claude-code-dispositions/private/disposition.md ~/.claude/disposition.md
+
+`status` prints the link and `status --delivered` proves the text arrived. A work
+machine takes personal details into its prompts by linking this, so link there
+only on purpose.
+
+The turn rule works the same way for the per-turn style reminder: `~/.claude/turn-rule.md`
+(or `CLAUDE_TURN_RULE_FILE`), read each time the line renders, needs an active output
+style. Template: `turn-rule.example.md`. The operator's is `private/turn-rule.md`:
+
+    ln -s ~/Projects/claude-code-dispositions/private/turn-rule.md ~/.claude/turn-rule.md
+
+It reaches subagents and workers too, so it must carry its own exception for them.
+A session with no output style gets no reminder, so no rule. Kubuntu sets the style in
+`~/.claude/settings.json`; the Mac sets it per project in `.claude/settings.local.json`.
+So `status --delivered`, which captures from an empty directory, reports the rule NOT IN
+SESSION on the Mac. That is expected, not a failure; MISSING is the failure.
+
 Then the two durability guards (spec/30), which the pipeline assumes:
 
 - `~/.claude/settings.json` → `env`: `DISABLE_AUTOUPDATER: "1"` **and**
@@ -349,6 +374,11 @@ Then the two durability guards (spec/30), which the pipeline assumes:
   the ccctl clone (`~/ccctl/repo`), which `ccctl.py pull` keeps current, not
   at a working clone that can move. `status` prints a `tripwire` line that
   says whether the paths the hook names still exist (spec/30).
+  The same run prints one `[session]` line first, on every start: machine
+  and project kind, derived from hostname and the git remotes of
+  `CLAUDE_PROJECT_DIR` (`ccctl.SESSION_MACHINES`, `SESSION_REMOTES`; the
+  floor says how a model treats it, spec/15 §5.8). A new machine or hosting
+  pattern is one entry there; `status` shows the line as `session line`.
 - **No** `CLAUDE_CODE_SUBAGENT_MODEL` and no `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`
   in `~/.claude/settings.json` → `env`: since 2026-09-29 the operator runs CC's
   default subagent models, to see how Sonnet 5.5 plays out (it replaced the
@@ -368,6 +398,11 @@ Then the two durability guards (spec/30), which the pipeline assumes:
   TTL. A setting-chosen TTL bypasses keepalive. It is a workaround for
   anthropics/claude-code#101685; the removal condition is in
   `notes/2026-10-15-cache-keepalive-5m.md`.
+
+`status --delivered` supplies a dummy API key only to its loopback capture
+server, so expired OAuth cannot block this free check. It retains configured
+models, settings and client data, but uses API-key transport: a passing capture
+does not establish account login validity or subscription-only behavior.
 
 **Sibling read-back, after any change to our text** (operator, 2026-10-08:
 "You can also query a sibling opus `claude -p` process to ask them about
@@ -420,6 +455,14 @@ Reading the exit code (also the report's `overall`):
 Re-apply for the *installed* version (e.g. something reverted the binary —
 the tripwire says so at session start): `ccctl.py apply`.
 
+By CC 2.1.301, the `temporal_hare` lean rewrite can return
+alternate delivery, correction and communication bodies before our fragments.
+`lean-rewrite-off` disables the shared predicate behind both leanRewrite
+caches; explicit capability assignment is included in the localhost delivery
+regression. Variant-keyed context sections still carry the reporting floor
+without a gate. Evidence: [macOS 2.1.302](../notes/2026-10-18-macos-2.1.302.md),
+[Windows 2.1.303](../notes/2026-10-19-win32-2.1.303.md).
+
 The B arm (see "The stock arm" below):
 
 ```
@@ -463,6 +506,17 @@ above prove a machine, not the repo.
    or a failing test.
 
 Then `apply`/`update` on the machine being claimed, and only that machine.
+
+### Captured decisions and shared renderers (CC 2.1.312)
+
+Section capture and text composition are separate. The shared renderer
+registry consumes applicability booleans and tagged server facts; locators
+must patch those renderers or their actual selector, not a former text-returning
+registration callback. The reporting floor follows the context renderer's body
+choice, and the delegation cut preserves the tagged early-stopping case.
+`tools/tests/test_ccctl_section_renderers.py` executes both arms and requires
+ambiguous or unknown shapes to fail closed. Release reading and machine proof:
+[Linux 2.1.312](../notes/2026-10-27-linux-2.1.312.md).
 
 ### Bundled copies of Claude Code
 
@@ -540,6 +594,28 @@ Implementation (`tweakcc_apply_to`), both hazards measured on win32:
 
 Because tweakcc rewrites parts of the binary, the plan is re-located against
 the staged bytes afterwards rather than trusted from the pristine pass.
+
+**Cross-version staging backup (2026-10-17):** upstream 4.4 checks that its
+backup has the target's version before restoring it. Startup can reach that
+restore before refreshing the old backup. `staged_tweakcc_backup` therefore
+temporarily supplies the incoming pristine stage as its backup, restoring the
+previous recovery file on success or failure. The incoming release never
+becomes advertised recovery for the still-installed one. After activation and
+post-verification, `promote_restore_backup` atomically gives the backup the
+newly installed pristine, so `restore` remains available across upgrades.
+Regression coverage:
+`test_ccctl_upstream_build.py`; observed failure and repeat stage:
+[Linux 2.1.301](../notes/2026-10-17-linux-2.1.301.md).
+
+**Alternate prompt bodies (CC 2.1.301):** the `temporal_hare` capability can
+select parallel stock main sections and tool descriptions. The shared cached
+`leanRewrite` selector is cut by `lean-rewrite-off`, including its
+compiled-only route. This restores the existing reviewed bodies without
+authoring new prompt text. A surviving capability/consumer with a missing or
+ambiguous selector is MANUAL. The ordinary gate-clause and catalogue diff
+still run; a forced-capability localhost capture compares stock and patched
+binaries to prove this mask ahead of any server assignment. Later machines
+inherit that release reading and run their own apply/check/delivered/flags.
 
 **Fallback when a build rejects the patch set.** If `--apply` fails, or the
 re-location finds targets that no longer locate, the run does not stop: the

@@ -606,6 +606,17 @@ words under upstream's recap line and 299 under ours, which is what put length
 and form into the floor itself. What remains unmeasured is whether the rewrite
 holds over weeks of real sessions; `tools/closing_lengths.py` counts it.
 
+The floor's section also carries the disposition file, ahead of the floor: who the
+operator is, in their own words (spec/40, runbook). It is theirs to edit and is not
+reporting text. Replaying the report of session `c55a346d` with it in the prompt did
+not change the report's shape (`notes/2026-11-01-active-floor-read.md`).
+
+The floor sets the default and the turn rule holds it. A rule in the per-turn style
+reminder changed the shape of a report that the floor alone did not, at 67k and at
+392k tokens of context (`notes/2026-11-01-sweep/replay/hard-rules-comparison.md`). It
+is the operator's file, like the disposition file (spec/40, runbook). A word cap alone
+produced "everything passes" claims; the deployed wording forbids that rounding.
+
 ### 5.3 The channel facts — reinstated after a live loss (item 21)
 
 2026-08-29, macOS, patched 2.1.241, Fable 5, headless gateway turn: a full
@@ -796,7 +807,7 @@ of the last; the deployed bytes are in `ab/data.json`):
 | Line | Class (§7.3) | Answers | Falsifier |
 | --- | --- | --- | --- |
 | "what changed and what it touched: which repos, which remotes, which live systems" | 1 — repair | AMA: *"a short description of the change and which repos, remotes and, if applicable, systems were touched"*. | Does the reply name every repo, remote (and whether it was pushed) and live system the turn touched, and nothing about how? |
-| "as one-line bullets, what happens if they do nothing — each one a consequence, not an explanation, and none carrying the fix" | 1 — repair | AMA: *"terse bullets that don't necessarily explain the underlying situation but the consequences if I don't act"*. Replaces the 09-21 category keep-list, whose "with the output" invited the account behind each item. | Is each bullet one line, a consequence of inaction, with no cause story and no remedy? |
+| "only when something would actually happen if they do nothing, say it as one-line bullets — each one a consequence, not an explanation, and none carrying the fix. When nothing would, leave them out: a slot filled for its own sake is performance" | 1 — repair | AMA: *"terse bullets that don't necessarily explain the underlying situation but the consequences if I don't act"*. 2026-10-20 (companion session 9c07d7ef): the slot was mandatory, and a work-session handoff (#2015) filled it with its own next steps (branches to switch back before #2237), which read as nagging. Operator, verbatim: *"make the if you do nothing thing \*optional\* in case it's actually warranted, so it doesn't become performance for nothingburgers"*. Same mechanism as C-10 (a fixed slot invites something to fill it). Replaces the 09-21 category keep-list, whose "with the output" invited the account behind each item. | Is each bullet one line, a consequence of inaction, with no cause story and no remedy? |
 | "Suggestions and offers come last, where they can be skipped, and as statements, not questions" | 1 — repair | AMA: *"consequences only, and any suggestions were offered towards the end"*. The statement form is for CC's session-state classifier (§5.5). | Does any suggestion or offer appear before the last bullet, or end in a question mark? |
 | "An offer is for work outside what the task already authorizes; a step inside it is started, and the message says it is running" | 1 — repair | 2026-10-11, C-10: the slot drained the C-07 licence. Claude's own account in a work session, turn 361: *"A format with a fixed slot invites something to fill it, and "I can do X" fits perfectly … The closing format usually wins, because it is concrete and sits exactly where the decision gets written."* | Does a closer end with an offer to do something the delivery fragment already authorizes? |
 | "How the work was done, checked or diagnosed is not in the message: a turn of fifty tool calls …" | 1 — repair | The 09-25 recount: closers of 200–400 words narrating verification. A default, not a cap: "they will ask" still follows it. | Does the report's length track the turn's length rather than what changed? |
@@ -892,6 +903,52 @@ context-management body's conditional. The writing-style cut retains its early
 return despite the new rewrite guard. Evidence and the release-wide gate read:
 [Windows 2.1.303](../notes/2026-10-19-win32-2.1.303.md).
 
+### 5.8 The live conversation (2026-10-29)
+
+The floor opened with *"The person reading this was elsewhere while you
+worked."* §5's original line was scoped (*"After a run of many tool calls,
+assume they were elsewhere"*); the deployed one was not, so every reply,
+including a live back-and-forth, was written as a report to an absent reader.
+In a T3 Code ideation session that produced briefings with bold-led bullets
+and four batched decisions. It turned conversational only after the operator
+typed *"for planning and ideation, i need us to chat"*. His verdict on the
+sentence: *"pure confabulation based on inference of me naming the fact that
+I'm often between a lot of sessions. that doesn't mean that when i'm in live
+in a session that goes back and forth that means that i'd want 5098273847
+tokens of output nobody wants to read"*.
+
+The absent reader is now conditional on a run of work (*"often the only part
+they read, sometimes hours later"*), and the live case has its own paragraph:
+
+> When the two of you go back and forth instead, planning, ideating or
+> deciding something together, they read as you write. None of that report
+> shape applies. Write a turn in a conversation: a few sentences, your view,
+> and the one question that matters next. Decisions come one at a time, as the
+> conversation reaches them.
+
+| Line | Class (§7.3) | Answers | Falsifier |
+| --- | --- | --- | --- |
+| The live paragraph | 1 — repair | The 10-29 session above; the good turn after "chat" is its own template (short, one question). | In a planning exchange with few or no tool calls, does a reply carry a status opening, a bullet block or more than one decision? |
+
+The pane, voice and coinage rules still hold in conversation; only the report
+shape is lifted.
+
+**Which case to expect first comes from a `[session]` line.** Same day, the
+operator: give agents *"information about their env (which machine, is this
+typical agentic work for the dayjob or a private project …)"*, *"derived
+automatically is a good idea, but make the agents recognize and react sensibly
+to failures of automatic recognition"*. The session-start tripwire prints the
+machine (hostname) and the project kind (git remotes: Azure DevOps is day-job,
+Forgejo and `github.com/[HANDLE]` private, anything else a third-party clone).
+It never guesses: an unknown host or remote says UNRECOGNIZED, a missing
+project dir UNKNOWN, conflicting remotes MIXED, a crash FAILED, each with what
+it saw. The floor makes the line a default rather than a ruling and tells the
+model to say once, in its first reply, when the line is off or absent.
+
+| Line | Class (§7.3) | Answers | Falsifier |
+| --- | --- | --- | --- |
+| The `[session]` paragraph | 3 — information, with a failure exit | The operator's two lines above. | On a machine or repo the patterns do not know, does the first reply say so in one line, and only once? |
+
 ## 6. What is deliberately not installed
 
 - **A word or sentence cap on the whole message.** It would break every turn
@@ -907,8 +964,9 @@ return despite the new rewrite guard. Evidence and the release-wide gate read:
   terminal message. The §5.4 layer order is an order of content, not headings;
   its consequence bullets are a list because the content is one.
 - **The uncertainty ladder**, per §4's table.
-- **Anything that assumes he is present.** Half of these sessions are read
-  hours later or not at all.
+- **Anything that assumes he is present after a run of work.** Half of those
+  closers are read hours later or not at all. A live back-and-forth is the
+  other case, and §5.8 gives it its own paragraph.
 
 ## 7. How to test it
 

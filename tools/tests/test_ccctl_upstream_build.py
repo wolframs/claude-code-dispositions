@@ -17,6 +17,75 @@ spec.loader.exec_module(builder)
 
 
 class UpstreamBuildTests(unittest.TestCase):
+    def test_restore_backup_is_promoted_only_after_target_activation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            backup = root / 'native-binary.backup'
+            backup.write_bytes(b'old recovery')
+            pristine = root / 'incoming'
+            pristine.write_bytes(b'new recovery')
+            with patch.object(cc, 'TWEAKCC_DIR', root), \
+                    patch.object(cc, 'pristine_source', return_value=pristine) as source:
+                with patch.object(cc, 'cc_version', return_value='old'):
+                    with self.assertRaises(SystemExit):
+                        cc.promote_restore_backup('new', ['marker'])
+                self.assertEqual(backup.read_bytes(), b'old recovery')
+                source.assert_not_called()
+                with patch.object(cc, 'cc_version', return_value='new'):
+                    cc.promote_restore_backup('new', ['marker'])
+                source.assert_called_once_with('new', ['marker'])
+                self.assertEqual(backup.read_bytes(), b'new recovery')
+                self.assertFalse(list(root.glob('ccctl-restore-*')))
+
+    def test_update_plan_total_excludes_explicit_noops(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with patch.multiple(cc, cc_version=lambda: '2.1.301',
+                                repo_markers=lambda cfg: ['marker'], repo_edits=lambda cfg: [],
+                                prompt_data_status=lambda ver: 'cached',
+                                run=lambda *args, **kwargs: SimpleNamespace(stdout='4.4.0'),
+                                tweakcc_node=lambda: ['node', 'tweakcc'], tweakcc_latest=lambda: '4.4.0',
+                                tweakcc_build_state=lambda *args: {'verdict': 'ok', 'line': 'reviewed'},
+                                pristine_source=lambda *args: root / 'pristine', live_blob=lambda p: b'',
+                                load_snapshot=lambda ver: {'present': {}},
+                                plan_fragments=lambda *args: [{'name': 'edit', 'status': 'AUTO'}],
+                                plan_adhocs=lambda blob: [{'name': 'absent gate', 'status': 'NOOP'}],
+                                repo_commit=lambda cfg: 'reviewed', write_report=lambda *args: None):
+                report, _, plan = cc.analyze_core({'repoPath': str(root)}, '2.1.301')
+            self.assertEqual(report['overall'], 'CLEAN')
+            self.assertEqual(report['planTotal'], len(plan['AUTO']))
+            self.assertEqual(report['planTotal'], 1)
+
+    def test_stage_gets_matching_backup_and_live_recovery_survives_success_or_failure(self):
+        for fail in (False, True):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                backup = root / 'native-binary.backup'
+                backup.write_bytes(b'previous release recovery')
+                staged = root / 'incoming'
+                staged.write_bytes(b'incoming pristine release')
+                with patch.object(cc, 'TWEAKCC_DIR', root):
+                    try:
+                        with cc.staged_tweakcc_backup(staged):
+                            self.assertEqual(backup.read_bytes(), staged.read_bytes())
+                            backup.write_bytes(b'tweakcc changed its backup')
+                            if fail:
+                                raise RuntimeError('patch failed')
+                    except RuntimeError:
+                        self.assertTrue(fail)
+                self.assertEqual(backup.read_bytes(), b'previous release recovery')
+                self.assertFalse(list(root.glob('ccctl-backup-*')))
+
+    def test_stage_does_not_leave_a_backup_when_none_existed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            staged = root / 'incoming'
+            staged.write_bytes(b'incoming pristine')
+            with patch.object(cc, 'TWEAKCC_DIR', root):
+                with cc.staged_tweakcc_backup(staged):
+                    self.assertEqual((root / 'native-binary.backup').read_bytes(), staged.read_bytes())
+            self.assertFalse((root / 'native-binary.backup').exists())
+
     def test_no_overlay_build_never_calls_the_legacy_dist_adapter(self):
         with tempfile.TemporaryDirectory() as temp, \
                 patch.object(builder, 'OVERLAY', None), \

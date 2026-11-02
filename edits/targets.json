@@ -113,7 +113,7 @@
     "id": "disposition-floor-under-every-output-style",
     "kind": "adhoc",
     "title": "Reporting floor",
-    "intent": "Append the reader/reporting contract through the shared output-style section.",
+    "intent": "Append the reader/reporting contract through the always-present shared context section, or the output-style renderer on legacy releases. Ahead of it, the text of ~/.claude/disposition.md, read at runtime; a machine without the file gets nothing.",
     "source": "tools/ccctl.py",
     "implementation": "plan_adhocs",
     "spec": "spec/15-reporting-contract.md",
@@ -178,5 +178,15 @@
     "implementation": "plan_adhocs",
     "spec": "spec/15-reporting-contract.md",
     "verification": "Unique whole-literal match and exact active-source replacement; the stock sentence is an anti-marker (one copy in stock 2.1.280, none after the rewrite). status --delivered sees it only in a session whose Bash output was long enough to fire the note."
+  },
+  {
+    "id": "turn-rule-file",
+    "kind": "adhoc",
+    "title": "Per-turn rule file",
+    "intent": "Append the text of ~/.claude/turn-rule.md, read at runtime, to the per-turn output-style reminder, the only prompt text beside the moment of writing. A machine without the file gets the stock line.",
+    "source": "tools/ccctl.py",
+    "implementation": "plan_adhocs",
+    "spec": "spec/15-reporting-contract.md",
+    "verification": "Unique stock structure and exact active-source replacement; status --delivered proves the text arrives when a file exists."
   }
 ]

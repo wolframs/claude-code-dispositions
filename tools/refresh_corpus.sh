@@ -29,7 +29,7 @@ mkdir -p "$RAW" "$STAMPS"
 SSH=(ssh -o BatchMode=yes -o ConnectTimeout=10)
 AIR_HOST="[HUMAN]@[MACOS_LAPTOP]"
 AIR_RSYNC="${CORPUS_AIR_RSYNC:-/opt/homebrew/bin/rsync}"
-HN_HOST="ssh-recovery@hn-[HUMAN].[LAN]"
+HN_HOST="ssh-recovery@work-laptop.[LAN]"
 HN_PROJECTS='[WINDOWS_HOME]\.claude\projects'
 LINUX_HOST="[HUMAN]@[LINUX_WORKSTATION]"
 RSYNC_BIN="${CORPUS_RSYNC:-rsync}"

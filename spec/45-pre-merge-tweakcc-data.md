@@ -6,7 +6,7 @@ not permission to guess prompt fragments or to force a MANUAL analysis. The
 source of truth remains prompt data prepared by tweakcc; this procedure uses
 an in-review contribution from a trusted upstream maintainer before merge.
 
-## Current build pin (2026-10-19)
+## Current build pin (2026-10-20)
 
 `release.json` selects upstream tweakcc 4.4.0 at the exact release merge
 commit, with `overlay: null`. Its native module writer replaces the source
@@ -22,13 +22,34 @@ a newer target is advisory UNPROVEN until a staged build earns that extension.
 Historical overlays remain build provenance and are selected only by an older
 release checkpoint. Do not apply `patch_tweakcc.py` to the current build.
 
+**2026-10-17 extension:** the same source pin staged CC 2.1.301 with its
+feature patches, banner and delivered CLI/SDK text intact. The prompt data
+is the merged PR 1044 map; no source rebuild or overlay was needed. The
+cross-version backup repair and forced `temporal_hare` capture are recorded
+in [the Linux release note](../notes/2026-10-17-linux-2.1.301.md). This extends
+the compatibility boundary, not another machine's deployment claim.
+
+**Container gap (2026-10-25).** This pin cannot write CC 2.1.310 or later:
+Bun's bytecode became one shared slab, and tweakcc before `c44c88c3`
+(PR 1053, merged on `main`, unreleased) stalls on it. `ccctl` skips
+tweakcc's patch set on such builds before running it
+(`TWEAKCC_CONTAINER_FLOORS`), so they carry our patches without the in-CC
+banner. `release.json`'s `tweakcc.containerGap` records this in place of
+extending `verifiedCcVersion`. The operator does not want a pin review for
+the banner alone (2026-10-25). The next pin review that has its own reason
+picks up `c44c88c3`, and should read `6ab4cd82` (tweakcc re-applying its patches
+across CC updates) against ccctl's update path. Evidence:
+[the 2.1.310 round](../notes/2026-10-25-upstream-2.1.310-preview.md).
+
 Windows 2.1.303 uses this same source pin, with prompt data from official
 maintainer PR 1047 under the trust gate below. Its staged feature pass works
 after seeding tweakcc's backup from the target pristine; see
-[the 2.1.303 round](../notes/2026-10-19-win32-2.1.303.md). After PR 1047 merges,
-compare its published map with the blob in `release.json` before replacing any
-cache entry. TODO's machine table distinguishes the last recorded Linux/macOS
-verification from the operator's newer approximate version reports.
+[the 2.1.303 round](../notes/2026-10-19-win32-2.1.303.md). PR 1047 merged as
+`f6c8e51b`; on 2026-10-20 `main`'s published map was the reviewed blob, so the
+seeded cache entries need no replacement. macOS took 2.1.303 the same day
+([macOS round](../notes/2026-10-20-macos-2.1.303.md)), after running 2.1.302
+with the official 2.1.301 map carried forward under the procedure below
+([2.1.302 round](../notes/2026-10-18-macos-2.1.302.md)).
 
 **Mac native test compiler:** its normal Bun 1.3.13 emits an invalid signature
 for the untouched test fixture. The private, checksum-verified Bun 1.3.14
@@ -73,6 +94,13 @@ comparison found the published blob identical, so the seed needs no replacement.
 `4.3.3-cc-2.1.296.patch`, is the .294 overlay under a new name: tweakcc's
 per-patch results on 2.1.296 equal 2.1.294's line for line
 (`notes/2026-10-09-linux-2.1.296.md`).
+
+**CC 2.1.312 (2026-10-27) used it the same way.** PR 1058 (`db652012`, MEMBER,
+one unsigned commit, one added file, blob `a3d24857`) merged on 2026-10-29 as
+`97a31ecc`, GitHub-verified. The 2026-11-01 comparison found the published
+blob and SHA-256 identical to `release.json`, and every machine's seed matched
+that hash, so no seed needs replacement
+(`notes/2026-11-01-macos-2.1.312.md`).
 
 **`main` has had its own code-split support since 2026-10-09** (PR 1034,
 `0c99d110`). The earlier pin predated it; the 2026-10-12 reviewed pin now uses it directly.
@@ -144,9 +172,12 @@ target, with the results in the round note:
 1. every edited fragment's `pieces` equal the last reviewed map's;
 2. `plan_fragments` with the carried map locates each one AUTO and unique;
 3. every interpolation gap is a bare identifier, with the count unchanged;
-4. every piece occurs once in the binary (no second emission site);
+4. the complete located span and each distinctive prose piece occur once in
+   the active sources (no second emission site); generic pieces such as
+   `${`, `?` or `:""}` can repeat and cannot establish uniqueness;
 5. each located span equals the previous release's span after the
-   `${identifier}` gaps are normalised;
+   bare identifier gaps are normalised, including identifiers used as a
+   conditional branch inside an interpolation;
 6. the stock captures (`status --delivered`) carry our text on every
    configured model after the update.
 

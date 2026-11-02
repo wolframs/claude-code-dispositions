@@ -119,6 +119,18 @@ check("delivered: upstream's own text in the slot is DISPLACED",
 # request means upstream's text holds the slot; neither means the slot is not
 # in this session (the audience note only fires after truncated Bash output).
 bn_owner = {"not what it printed": "bash-audience-note-result-not-output"}
+disp = {t: v for t, v, _d in cc.delivered_verdicts(request(FULL_SYSTEM + "\nThe user is also this env's operator."), OWNERS, None, "The user is also this env's operator.")}
+check("delivered: a disposition line in the system prompt -> DELIVERED", disp.get("disposition-file") == "DELIVERED")
+disp = {t: v for t, v, _d in cc.delivered_verdicts(request(FULL_SYSTEM), OWNERS, None, "not there")}
+check("delivered: a disposition file not in the prompt -> MISSING", disp.get("disposition-file") == "MISSING")
+disp = {t: v for t, v, _d in cc.delivered_verdicts(request(FULL_SYSTEM), OWNERS)}
+check("delivered: no disposition file -> no row", "disposition-file" not in disp)
+
+styled = request(FULL_SYSTEM); styled["messages"] = [{"role": "user", "content": "x output style is active. y The rule"}]
+check("delivered: a turn rule in the reminder -> DELIVERED", cc.turn_rule_verdict([styled], "The rule")[0] == "DELIVERED")
+check("delivered: a reminder without the turn rule -> MISSING", cc.turn_rule_verdict([styled], "Other")[0] == "MISSING")
+check("delivered: no reminder in the session -> NOT IN SESSION", cc.turn_rule_verdict([request(FULL_SYSTEM)], "x")[0] == "NOT IN SESSION")
+
 # A synthetic last sentence and its own digest stand in for Anthropic's.
 _bn_syn = "If the user needs this synthetic tail, it stands in here."
 _real_bn_tail = cc.BASH_NOTE_TAIL
@@ -203,6 +215,8 @@ fake_script.write_text(f"""import json, os, sys, urllib.request
 with open({str(capture_cwds)!r}, "a", encoding="utf-8") as log:
     log.write(json.dumps(os.getcwd()) + "\\n")
 base = os.environ["ANTHROPIC_BASE_URL"]
+assert base.startswith("http://127.0.0.1:")
+assert os.environ.get("ANTHROPIC_API_KEY") == "ccctl-local-capture"
 assert "CLAUDECODE" not in os.environ
 nag = os.environ.get("FAKE_NAG")
 def post(body):
