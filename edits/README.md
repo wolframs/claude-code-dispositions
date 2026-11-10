@@ -21,6 +21,8 @@ The fragments are full replacement bodies in this directory:
 | `correction-restraint` | Evidence-led correction without repeated self-auditing |
 | `tool-description-todowrite` | Task tracking without the stock worked-example mass |
 | `subagent-delegation-examples` | Delegation examples with honest asynchronous reporting |
+| `work-completion-and-direct-editing` | Fable 5.2's stock "Finishing work", without the stopping rules delivering-work already states |
+| `memory-notes-and-feedback-rules` | Fable 5.2's stock memory section; the ask-once clause moved to delivering-work, the documents sentence yields to standing instructions |
 
 The adhocs are derived by `plan_adhocs()` in `tools/ccctl.py` against each
 build's own minified identifiers, with the reasoning for each in the comment

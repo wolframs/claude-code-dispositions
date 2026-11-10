@@ -3,10 +3,11 @@
 ![“I thought that was implicit in this repo’s setup?” — after a finished change was left uncommitted.](assets/readme-hero.svg)
 
 Personal edits to Claude Code's system prompts, using
-[tweakcc](https://github.com/Piebald-AI/tweakcc). Python tooling for Linux, macOS
-and Windows. [MIT](LICENSE).
+[tweakcc](https://github.com/Piebald-AI/tweakcc), and the tooling that keeps
+them identical on a Linux workstation, a Mac and a Windows laptop.
+[MIT](LICENSE).
 
-[What prompted this](#what-prompted-this) · [Using the edits](#using-the-edits) · [How updates work](#how-updates-work) · [The spec](spec/00-disposition-spec.md)
+[What prompted this](#what-prompted-this) · [One setup, three machines](#one-setup-three-machines) · [Using the edits](#using-the-edits) · [How updates work](#how-updates-work) · [The spec](spec/00-disposition-spec.md)
 
 I run several agent sessions alongside each other. I want them to use the
 context and tools available, make sensible inferences, and do the work I asked
@@ -43,6 +44,11 @@ The agent has a repo, tools, records and neighboring work to draw on. An
 unresolved finding is a reason to investigate before handing the task back.
 Finding out what is true and making the consequential change are separate
 decisions; permission for one does not imply permission for the other.
+
+How it looks matters too. I kept seeing agents sweep the whole home directory
+for a file, or sit on a question a cheap exploration agent could have settled.
+The edits now say where to look first: targeted searches in promising places,
+or a cheap explorer to find out where those are.
 
 ### Turning an inference into something I supposedly agreed to
 
@@ -88,6 +94,29 @@ job.
 On my own workload, Opus 5.5 has been quite a bit more proactive under the
 current edits. That is my experience using it, not a benchmark result.
 
+## One setup, three machines
+
+Fiddling around with Claude Code's complexities can be exhausting enough on
+one machine, and I decided to solve that problem for three different machines,
+on three different operating systems.
+
+- The edits live in this repository, and each machine's binary is patched
+  from them. Every patch location is derived again on that machine's own
+  bytes, because the minified names differ per platform.
+- One machine takes a new Claude Code release first and records a checkpoint.
+  The others catch up from it. If upstream has not published the prompt map
+  for that release yet, they take the reviewed one from the repository, by
+  hash.
+- `status --delivered` shows what each configured model receives on that
+  machine, through the CLI and through the Agent SDK.
+- The global `CLAUDE.md` is kept in a repository too, split into a part every
+  machine shares and a part that is only true of one of them
+  ([template](global-claude-md.example/README.md)). Sub agents read that file,
+  so it also carries the rules the patched prompt does not reach them with.
+- When the delivered prompt text changes, `apply` and `update` say that the
+  machine's global file has not been read since. It can hold instructions a
+  later edit made obsolete or contradicts.
+
 ## Using the edits
 
 The [disposition spec](spec/00-disposition-spec.md) is the
@@ -129,8 +158,15 @@ To install only the replacement fragments with tweakcc:
 
 ```sh
 cp edits/system-prompt-*.md edits/tool-description-*.md ~/.tweakcc/system-prompts/
+rm ~/.tweakcc/system-prompts/system-prompt-work-completion-and-direct-editing.md \
+   ~/.tweakcc/system-prompts/system-prompt-memory-notes-and-feedback-rules.md
 tweakcc --apply
 ```
+
+The two removed files keep most of a stock section, and this copy holds
+references to that stock text instead of the text itself
+([why](ABOUT-THIS-REPOSITORY.md)). Only `ccctl.py` can resolve them; installed
+as they are, the references would land in the prompt.
 
 This leaves out the additional binary patches and gate overrides. Use
 `ccctl.py` for the complete behavior change.
@@ -165,6 +201,12 @@ leaves the installed binary in place. For a new release, name the version:
 python3 ccctl.py analyze <version>
 python3 ccctl.py update <version>
 ```
+
+Sometimes a release brings stock text that says what an edit already says. In
+2.1.321 one model gained two such sections. The rule I settled on is
+port, then cut: compare sentence by sentence, bring into the edit whatever the
+stock sentence says that the edit did not, and only then trim the stock
+section, for the models that would otherwise read the instruction twice.
 
 `status --check` checks the installed patches. `status --delivered` captures
 what each configured model receives through the CLI and Agent SDK using a local

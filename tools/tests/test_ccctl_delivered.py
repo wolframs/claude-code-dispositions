@@ -18,6 +18,7 @@ Why this file exists (TODO 30, notes/2026-09-21-length-regime.md):
     cache said "strict". The verdicts below pin the classes that let a reader
     tell that apart from a stale binary and from a slot the session never has.
 """
+import time
 import atexit
 import shutil
 import importlib.util
@@ -233,6 +234,9 @@ for turn in range(20):
     reply = post({{"model": "m", "stream": True, "system": [{{"type": "text", "text": "x" * 500}}],
                   "tools": [{{"name": "Read", "description": "reads"}}], "messages": messages,
                   "argv": sys.argv[1:], "entry": os.environ.get("CLAUDE_CODE_ENTRYPOINT"),
+                  "clock": os.environ.get("CLAUDE_CODE_SILENT_TURN_REMINDER_SECONDS"),
+                  "flagenv": [os.environ.get("DISABLE_TELEMETRY"),
+                              os.environ.get("CLAUDE_CODE_GB_DISK_CACHE_WHEN_TELEMETRY_OFF")],
                   "stdin": sys.stdin.read() if turn == 0 else ""}})
     if reply is None:
         sys.exit(1)
@@ -259,6 +263,10 @@ check("capture_request: the sdk shape runs as sdk-ts with the host's flags and a
       and '"type": "user"' in req["stdin"], str(req and (req["entry"], req["argv"][:4])))
 reqs, err = cc.capture_request("claude-x", "print", binary=fake, timeout=30)
 req = reqs[0] if reqs else None
+# Otherwise the session fetches flags as a gateway client and saves them over
+# the operator's cache (2026-11-09).
+check("capture_request: the session reads cached server flags and neither fetches nor saves",
+      req and req["flagenv"] == ["1", "1"], str(req and req["flagenv"]))
 check("capture_request: the print shape runs -p without a forced entrypoint",
       req and req["argv"][:2] == ["-p", "hi"] and req["entry"] is None, str(req and req["argv"]))
 # The prompt must precede --allowedTools, which takes a LIST and swallowed a
@@ -286,9 +294,26 @@ check("injected_texts: <system-reminder> blocks in a tool result count too",
       cc.injected_texts({"messages": [{"role": "user", "content": [
           {"type": "tool_result", "content": "data<system-reminder>\nbe careful\n</system-reminder>"}]}]})
       == ["be careful"])
+# A reminder on a clock (CC 2.1.321, Fable 5.2) is out of a five-second
+# script's reach: the stock binary read quiet. The capture shortens the clock
+# and spaces its turns for exactly those sessions.
+check("clocked reminder: Fable 5.2's clause puts the reminder on a clock",
+      cc.reminder_on_a_clock({"fable_5_2_prompt_bundle"}, {}))
+check("clocked reminder: a turn-counting model is left as it was",
+      not cc.reminder_on_a_clock({"opus_5_5_prompt_bundle"}, {})
+      and not cc.reminder_on_a_clock(None, None))
+check("clocked reminder: a client-data seconds key does it too, a boolean does not",
+      cc.reminder_on_a_clock(set(), {cc.REMINDER_CLOCK_KEY: 30})
+      and not cc.reminder_on_a_clock(set(), {cc.REMINDER_CLOCK_KEY: True}))
+began = time.monotonic()
+reqs, err = cc.capture_request("claude-x", "print", binary=fake, timeout=30, turns=3,
+                               env_more={cc.REMINDER_CLOCK_VAR: "1"}, pace=0.2)
+check("clocked reminder: the session runs with the clock at 1 s and paced silent replies",
+      err is None and len(reqs) == 4 and reqs[0]["clock"] == "1"
+      and time.monotonic() - began >= 0.6, f"{err} {len(reqs)}")
 owned_cwds = [Path(json.loads(line)) for line in capture_cwds.read_text(encoding="utf-8").splitlines()]
 left = {path for path in owned_cwds if path.exists()}
-check("capture_request: cleanup tracks this test's captures only", len(owned_cwds) == 4)
+check("capture_request: cleanup tracks this test's captures only", len(owned_cwds) == 5)
 check("capture_request: the capture cwd is gone afterwards", not left, str(left))
 
 missing = scratch / "no-request.py"
@@ -307,6 +332,23 @@ failed_record["deliveredCapture"]["results"].append(
     {"shape": "sdk", "model": "claude-y", "verdicts": {"target": "MISSING"}})
 check("delivered summary: a real missing fragment survives a separate capture failure",
       "NOT: sdk/claude-y" in cc.delivered_summary("2.1.280", failed_record))
+
+# --- a fragment that only cuts stock text has no marker, and still gets a row
+# Synthetic kept line and cut sentence (site-prep): the real ones are stock
+# text, which the published tests do not carry.
+KEPT = "A kept line of the trimmed section, long enough to stand for it in a request"
+CUT_SENTENCE = "a sentence the trim removed"
+CUT = {"system-prompt-work-completion-and-direct-editing": ([CUT_SENTENCE], KEPT)}
+co = {t_: v for t_, v, _d in cc.delivered_verdicts(request("# Finishing work\n" + KEPT + " and more."), {}, None, None, CUT)}
+check("cut-only fragment: trimmed section present is DELIVERED",
+      co.get("system-prompt-work-completion-and-direct-editing") == "DELIVERED", co)
+co = {t_: v for t_, v, _d in cc.delivered_verdicts(
+    request(KEPT + " Then " + CUT_SENTENCE + ", back again."), {}, None, None, CUT)}
+check("cut-only fragment: a cut sentence back in the request is DISPLACED",
+      co.get("system-prompt-work-completion-and-direct-editing") == "DISPLACED", co)
+co = {t_: v for t_, v, _d in cc.delivered_verdicts(request("nothing of it"), {}, None, None, CUT)}
+check("cut-only fragment: a model without the section is NOT IN SESSION",
+      co.get("system-prompt-work-completion-and-direct-editing") == "NOT IN SESSION", co)
 
 # --- the CLI surface --------------------------------------------------------
 

@@ -10,6 +10,13 @@ native-binary*
 native-claudejs-*
 *.bin
 
+# ccctl workspace files — per machine, they live in the workspace, never here
+/ccctl.json
+/ccctl-state.json
+/stock-arm
+/changelog.md
+/snapshots/
+
 # node
 node_modules/
 .pnpm-store/

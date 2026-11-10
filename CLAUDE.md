@@ -100,7 +100,13 @@ called complete, and before the fragments are trusted on a new CC version:
    next" family). They live outside the prompt map tweakcc extracts, so
    `baseline/<ver>/prompts.json` cannot show them. `status --delivered`
    scripts seven silent tool turns per model and harness and lists what the
-   harness injected; grep the binary for the ones with other triggers.
+   harness injected; grep the binary for the ones with other triggers. A
+   trigger the script cannot reach reads as quiet on a stock binary too: on
+   2.1.321 Fable 5.2's reminder moved from a turn count to a 60 s clock, and
+   the capture now shortens that clock (`REMINDER_CLOCK_VAR` in ccctl.py).
+   When a release adds a trigger, run the capture against the parked stock
+   binary first: a check that cannot see the stock behaviour proves nothing
+   about ours.
 4. **Record what changed in the assembly** in the machine note even when the
    answer is "nothing": the absence of a finding is a measurement only if the
    check was run.
@@ -122,17 +128,30 @@ platform: only the minified names differ. The win32 gate was measured
 identical to the Linux gate on 2.1.270 and again on 2.1.278. So they run
 once per CC version, on the first machine to take it, and its note carries
 the result. Every later machine runs only the checks that depend on the
-machine:
+machine. All of it runs with the machine's ccctl workspace as the working
+directory (`cd ~/ccctl`), using the `ccctl.py` of the repository that
+workspace's `ccctl.json` names in `repoPath`: `repo/tools/ccctl.py` on Linux
+and macOS, the working checkout's on Windows. Run from anywhere else it has
+no configuration and says so:
 
-- `update` or `apply`, which re-derives every locator on this machine's own
-  bytes and refuses anything not AUTO;
+- `pull`, as its own step. It updates the workspace clone and the checkout the
+  `~/.claude` links point into, and it is what brings a newer `ccctl.py`;
+- `update <the checkpoint version in release.json>` when the machine's CC is
+  older than the checkpoint, otherwise `apply`. Either re-derives every locator
+  on this machine's own bytes and refuses anything not AUTO. When upstream has
+  no prompt map for the version, `update` takes the checkpoint's reviewed one
+  from this repository, by hash;
 - `status --check`;
 - `status --delivered`, which reads this machine's settings, client data and
   binary;
-- `flags`.
+- `flags`;
+- the read of this machine's global CLAUDE.md against what the round
+  delivered ("The global CLAUDE.md", below). `apply` and `update` end by
+  saying when it is due; `ccctl.py global-md --read` records it.
 
-A repo change on a CC version already verified somewhere needs `pull`,
-`apply`, `status --check` and `status --delivered`, and nothing else. If one
+A repo change on a CC version already verified somewhere needs the same list
+with `apply`, and nothing else. When the change is to our own text, step 2's
+sibling read-back belongs to it on every machine, one paid turn. If one
 of them disagrees with the first machine's note, that is a finding, and the
 full procedure runs again on this machine.
 
@@ -172,6 +191,48 @@ any other gate. Operator, 2026-09-29, narrowing the 2026-09-11 ruling
 been read as covering every arm: "The ruling applies only for "features" or
 behaviors that are not in conflict with other established behavioral outcome
 patches" (notes/2026-09-29-win32-2.1.284.md §2).
+
+## The global CLAUDE.md is this repository's work too
+
+Each machine's `~/.claude/CLAUDE.md` is kept here, in
+`private/global-claude-md/` (never published; `global-claude-md.example/` is
+the public template of the layout), and linked from there, so the operator's standing
+instructions travel between machines the way the prompt edits do. Its README
+says which file a machine reads and where a rule belongs; spec/40's runbook
+says how a machine links it; `ccctl.py status` prints what this machine has.
+
+The machine that takes a tweak or a release first is ahead of the others, and
+each of the others catches up through an agent working from inside this
+repository on that machine. That agent is the one who can see what the round
+has made obsolete in the machine's global file, so the read is part of the
+round, not a separate chore: `status` says whether the file was read against
+the tweaks as they stand, `apply` and `update` close with the same line when
+it was not, and `ccctl.py global-md --read` records the read once it is done.
+The record is per machine. It remembers that a read happened; it cannot judge
+one.
+
+In every release round, and whenever a round changes something those files
+state, read this machine's global file and the shared ones with judgment, not
+with a checklist, and correct what you find in the same round:
+
+- a fact the round has made stale (a version, a path, a tool's behaviour);
+- a rule that contradicts a deployed fragment, the reporting floor or another
+  rule in the same files;
+- a fact copied from its source of truth, which goes back to a pointer;
+- a rule in a machine file that would be right on every machine, which moves
+  to a shared file, and the reverse. Machine-only text stays under the
+  machine file's "This machine only" heading, so a reader can tell the two
+  kinds apart.
+
+This is the operator's authored text. Keep his wording where a rule stays,
+record what was removed and why in the round note, and leave the removed text
+recoverable (git history, or `notes/archive/` when a whole section goes). A
+rule that reads as a live preference rather than a stale or contradicted one
+is not pruned on an agent's judgment; it goes to him with the conflict named.
+Operator, 2026-11-10: "the goal there is to keep cross-machine CLAUDE.md stuff
+in sync too, just like the tweaks across my devices", and of stale or
+conflicting content: "exactly the kind of thing i'd want auto
+pruned/updated/corrected based on an intelligent read".
 
 ## Keep the repository consolidated
 

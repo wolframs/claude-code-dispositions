@@ -74,6 +74,17 @@ on purpose rather than quoted to anchor a patch. Measured against the release
 | `system-prompt-correction-restraint` | 201 w | 121 w | 53 w | 23 w |
 | `system-prompt-subagent-delegation-examples` | 343 w | 254 w | 146 w | 50 w |
 
+Since 2026-11-10 two further bodies exist that keep most of a stock section
+and only remove or change a few sentences:
+`system-prompt-work-completion-and-direct-editing` and
+`system-prompt-memory-notes-and-feedback-rules`. In this public copy their
+unchanged stock spans are not printed. Each is a reference of the form
+`{{stock:N:H}}`, the span's length and the start of its SHA-256, which
+`ccctl.py` resolves against the stock text of the release being patched. The
+headings and the changed clauses are in plain text. The same day the
+delivering-work body took in two short phrases from one of those sections on
+purpose (eight words each); the table above predates that.
+
 The measurement is exact, so it is worth saying which one it is: split
 `ccctl.stock_body(entry)` and `ccctl.edit_text(path)` on whitespace — so
 frontmatter is out and punctuation stays attached to its word — mark every

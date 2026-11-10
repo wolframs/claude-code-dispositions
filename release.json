@@ -1,15 +1,15 @@
 {
   "_comment": "The selected compatibility checkpoint: which Claude Code release the edits are reviewed against, the exact prompt map and tweakcc pin that review used, and the pristine binary hashes tools/build_ab.py accepts. A dated observation, not a fleet poll; the per-machine state is TODO.md's machine table.",
-  "ccVersion": "2.1.312",
-  "observedAt": "2026-10-27",
+  "ccVersion": "2.1.322",
+  "observedAt": "2026-11-10",
   "promptData": {
-    "path": "baseline/2.1.312/prompts.json",
-    "sha256": "2305b043c08d9b26c99959cec9ec0ea8c1fc13130be8c45fa24a59f337e49b95",
-    "blob": "a3d2485725b0193adec8df281d2387bc6db443c6",
+    "path": "baseline/2.1.322/prompts.json",
+    "sha256": "1acf593603922aed9d1b0ed44da64d41c0e6f10cce857f2fecd3c915e3dea898",
+    "blob": "250c0b1a5257302022ac0eed78fcadb56d662cfd",
     "upstream": "Piebald-AI/tweakcc",
-    "pullRequest": 1058,
-    "commit": "db652012e15a80a67d80820ebe35174fc4684709",
-    "reviewed": "Reviewed PRE-MERGE, 2026-10-27: official-repository PR 1058 by mike1858 (MEMBER), one unsigned commit on main e030828f6fb5a832e7cda68fbefd100762b97591, adding only the exact 2.1.312 generated map. Canonical bytes verified against the GitHub blob. Assembly, gates and installed verification: notes/2026-10-27-linux-2.1.312.md. Merged 2026-10-29 as 97a31ecc12c4394f25bacbd700dea6d88bb650fa; on 2026-11-01 the published main blob and SHA-256 equalled this pin, so the seeds need no replacement (notes/2026-11-01-macos-2.1.312.md)."
+    "pullRequest": 1069,
+    "commit": "abbc7166deea8e5820347d0678dcd1fa8164b04e",
+    "reviewed": "MERGED UNCHANGED: PR 1069 merged 2026-11-10T14:07Z and the blob on main (250c0b1a) equals the seed; PR 1068 (2.1.321) likewise (dd6614e3). As reviewed before the merge, 2026-11-10: official-repository PR 1069 by mike1858 (MEMBER), head repo Piebald-AI/tweakcc at abbc7166 (one unsigned commit on main's 00dbaf9d), adding only data/prompts/prompts-2.1.322.json. Seeded from the git blob, whose SHA-1 equals GitHub's file sha. It differs from the 2.1.321 map (PR 1068, baseline/2.1.321) in five lines: the version strings, two of which also carry the build's git SHA; none is in a fragment we edit. Replace the seeds per spec/45 'After upstream merges' if the merged blob differs. Round: notes/2026-11-10-macos-2.1.322.md."
   },
   "tweakcc": {
     "version": "4.4.0",
@@ -20,9 +20,9 @@
     "containerGap": "CC 2.1.310's shared bytecode slab needs tweakcc c44c88c3 (PR 1053, merged 2026-10-24, unreleased). This pin predates it, so assemble skips tweakcc's patch set on 2.1.310 and later (no in-CC banner). verifiedCcVersion stays 2.1.308 because the patch set has not run on 2.1.310."
   },
   "stock": {
-    "linux-x64": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
-    "win32-x64": "6099672ebe5dcb518b67d1d32dde1e3360bc6bee1dae7f8d28a69c49acc7c865",
-    "darwin-arm64": "6b5ec691195e551b02c41df9f7d723f4ea61eaa03c2df90acefe3736f1aeb620"
+    "linux-x64": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
+    "win32-x64": "345996b4bdbae21d817f750fae2f34cbf8d81224a5444c78136091d121beb298",
+    "darwin-arm64": "a9d237949db816a0b7afd88a9a8e1df36b3a597a30f5a41d1c0539eb180a3450"
   },
-  "stockSource": "downloads.claude.ai/claude-code-releases/2.1.312/manifest.json; linux-x64 SHA-256 and size verified by ccctl.download_binary on 2026-10-27, win32-x64 (298690208 bytes) on 2026-10-29, darwin-arm64 (275988512 bytes) on 2026-11-01."
+  "stockSource": "downloads.claude.ai/claude-code-releases/2.1.322/manifest.json; darwin-arm64 SHA-256 and size (323702464 bytes) verified by ccctl.download_binary on 2026-11-10; linux-x64 SHA-256 and size (341914128 bytes) verified the same way on 2026-11-10 (notes/2026-11-10-linux-2.1.322.md). win32-x64 (346496160 bytes) downloaded and verified against the manifest on the laptop on 2026-11-10, and the installed pristine re-hashed equal (notes/2026-11-10-win32-2.1.322.md)."
 }

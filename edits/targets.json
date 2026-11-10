@@ -60,6 +60,26 @@
     "verification": "Unique stock span, exact replacement, markers and anti-markers; rendering is a separate claim."
   },
   {
+    "id": "system-prompt-work-completion-and-direct-editing",
+    "kind": "fragment",
+    "title": "Finishing work (Fable 5.2), trimmed",
+    "intent": "Keep the stock section's obstacle handling, deliberate-blocker examples and direct-editing note; remove its stopping rules, which delivering-work states for every model, so a Fable 5.2 session reads them once.",
+    "source": "edits/system-prompt-work-completion-and-direct-editing.md",
+    "implementation": "plan_fragments",
+    "spec": "spec/00-disposition-spec.md",
+    "verification": "Unique stock span, exact replacement, anti-markers; reaches only models whose gate arms finishing_work_guidance."
+  },
+  {
+    "id": "system-prompt-memory-notes-and-feedback-rules",
+    "kind": "fragment",
+    "title": "Memory, notes and feedback (Fable 5.2), two clauses",
+    "intent": "Leave the stock section in place; move its ask-once clause to delivering-work and let the documents sentence yield to environment context and standing instructions, so it no longer overrules the reports/ clause or a project's own rules.",
+    "source": "edits/system-prompt-memory-notes-and-feedback-rules.md",
+    "implementation": "plan_fragments",
+    "spec": "spec/00-disposition-spec.md",
+    "verification": "Unique stock span, exact replacement, marker and anti-marker; reaches only models whose gate arms memory_guidance."
+  },
+  {
     "id": "lean-rewrite-off",
     "kind": "adhoc",
     "title": "Keep the reviewed prompt bundle",

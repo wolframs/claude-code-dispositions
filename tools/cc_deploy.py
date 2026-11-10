@@ -154,6 +154,14 @@ class Deployment:
         self.cc("status", "--delivered")
         self.execute([sys.executable, self.repo / "tools/probe_subagent_models.py", "--delegation-check"])
         self.cc("flags", "--no-record")
+        # The steps above write to the log. This one is for the reader: whether
+        # the machine's global CLAUDE.md still wants its read against what was
+        # just delivered (AGENTS.md, "The global CLAUDE.md").
+        shown = subprocess.run([sys.executable, str(self.repo / "tools/ccctl.py"), "global-md"],
+                               cwd=str(self.workspace), env=self.env, capture_output=True, text=True)
+        print(shown.stdout.rstrip(), flush=True)
+        if self.log:
+            self.log.write("\n$ ccctl.py global-md\n" + shown.stdout)
 
     def snapshot(self):
         if not self.launcher.is_symlink():

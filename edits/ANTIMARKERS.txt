@@ -66,3 +66,11 @@ Reserve blocking questions
 # sentence: whole file, linux-x64 stock 2.1.280 = 1, the live patched 2.1.280
 # = 0, the same as the full sentence on both. Not re-measured on win32.
 put it in your reply
+# Fable 5.2's stock sections (2026-11-10): the stopping sentence and the
+# status-notes sentence "Finishing work" loses, and the ask-once clause the
+# memory section loses. Trimmed for the public copy to the clause that carries
+# each (whole sentences on master): darwin-arm64 stock 2.1.322 = 1 each, the
+# live patched 2.1.322 = 0 each; 0 in stock 2.1.312, which has no such section.
+can rarely be merited
+recommendations on open decisions
+ask once but carry on

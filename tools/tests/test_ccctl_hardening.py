@@ -734,6 +734,21 @@ try:
     check("span_apply: honest write satisfies the exact-bytes assertion",
           item["new"] in tgt.read_bytes())
 
+    # Shrinks before growth: the pad a growing edit needs comes from the cuts
+    # (2026-11-10, delivering-work refused in plan order with the plan net-negative).
+    order = []
+
+    def recording(target, old, new):
+        order.append(len(new) - len(old)); return honest(target, old, new)
+    cc.adhoc_patch = recording
+    grow = {"name": "grow", "status": "AUTO", "old": b"<G>", "new": b"<GROWN-A-LOT>"}
+    same = {"name": "same", "status": "AUTO", "old": b"<S>", "new": b"<T>"}
+    cut = {"name": "cut", "status": "AUTO", "old": b"<CUT-THIS-TEXT>", "new": b"<C>"}
+    tgt.write_bytes(b"HEAD" + grow["old"] + same["old"] + cut["old"] + b"TAIL")
+    cc.span_apply(tgt, [grow, same, cut])
+    check("span_apply: shrinking items are written before growing ones",
+          order == sorted(order) and order[0] < 0 < order[-1], order)
+
     def mangling(target, old, new):        # reports success, eats the $ sequence
         p = Path(target)
         p.write_bytes(p.read_bytes().replace(old, new.replace(b"${$r}", b"${}")))
@@ -958,14 +973,14 @@ finally:
     shutil.rmtree(tmp7, ignore_errors=True)
 
 check("verdict: the SessionStart hook path warns about a patched backup",
-      "backup_is_patched(markers)" in inspect.getsource(cc.cmd_status))
+      "backup_is_patched(markers)" in inspect.getsource(cc._cmd_status))
 
 _restore = inspect.getsource(cc.cmd_restore)
 check("backup: --restore refuses a patched backup instead of calling it stock",
       "is_stock(backup, markers)" in _restore and "die(" in _restore
       and _restore.index("die(") < _restore.index('run([*tweakcc_node(), "--restore"]'))
 check("backup: status labels a patched backup as not a rollback source",
-      "not a rollback source" in inspect.getsource(cc.cmd_status))
+      "not a rollback source" in inspect.getsource(cc._cmd_status))
 
 # --- 2026-08-25: prune keeps the newest N per class. The trap is that
 # `.pre-swap.N` is the slot the swap took when `.pre-swap` was LOCKED by a

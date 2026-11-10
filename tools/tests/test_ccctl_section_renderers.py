@@ -49,6 +49,29 @@ class SectionRenderers(unittest.TestCase):
                     src.replace(b'servedForEffort:', b'changed:')):
             self.assertEqual(item(bad, 'delegation-override-cut')['status'], 'MANUAL')
 
+    def test_delegation_cut_keeps_sections_registered_between_its_renderers(self):
+        # CC 2.1.321 put hasOriginalGamesGuidance between reducesDelegation and served.
+        src = REGISTRY.replace(b'served:served,', b'hasGames:(s)=>s?games:null,served:served,') + SERVED
+        p = item(src, 'delegation-override-cut')
+        self.assertEqual(p['status'], 'AUTO')
+        code = (b'let communicate=0,lean=0,full=0,messages=0,ban="BAN",early="EARLY",style=0,games="GAMES";'
+                + src.replace(p['old'], p['new']) +
+                b'let r=registry(false,false,false);console.log(JSON.stringify(['
+                b'r.reducesDelegation(true),r.hasGames(true),r.served({kind:"served",text:"X"}),'
+                b'r.served({kind:"early-stopping"})]))')
+        self.assertEqual(self.run_js(code), [None, 'GAMES', None, 'EARLY'])
+
+    def test_lean_communication_when_lean_arm_is_none(self):
+        # CC 2.1.321 renamed the lean arm "short" to "none".
+        src = COMMUNICATION.replace(b'"short"', b'"none"')
+        p = item(src, 'lean-models-get-the-communication-fragment')
+        self.assertEqual(p['status'], 'AUTO')
+        code = (b'function model(x){return x};function rewrite(){return false};function turnUpdates(){return false};'
+                b'function readable(){return false};function special(){return false};function final(){return true};'
+                b'function lean(x){return x==="lean"};' + src.replace(p['old'], p['new']) +
+                b'console.log(JSON.stringify([select("lean",false),select("normal",false)]))')
+        self.assertEqual(self.run_js(code), ['readable-final-message', 'standard'])
+
     def test_floor_follows_both_context_renderings_once(self):
         p = item(REGISTRY, 'disposition-floor-under-every-output-style')
         self.assertEqual(p['status'], 'AUTO')

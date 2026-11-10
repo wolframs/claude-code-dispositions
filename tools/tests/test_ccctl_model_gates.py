@@ -184,6 +184,13 @@ check("clauses: the 2.1.280 gate parses to all three arms, each with its model",
 check("drift: 2.1.280's gate matches the table",
       cc.gate_drift(cc.model_gate_clauses(_280), "2.1.280") == [],
       str(cc.gate_drift(cc.model_gate_clauses(_280), "2.1.280")))
+_321 = {**cc.model_gate_clauses(_280),
+        "opus_5_5_prompt_bundle": frozenset(["silent_turn_reminder", "original_games_guidance"]),
+        "fable_5_2_prompt_bundle": frozenset(cc.MODEL_GATE_CLAUSES["fable_5_2_prompt_bundle"][0])}
+check("drift: 2.1.321's clauses match the table, the 2.1.280 set is still accepted",
+      cc.gate_drift(_321, "2.1.321") == [], str(cc.gate_drift(_321, "2.1.321")))
+check("drift: an unknown opus 5.5 set is still drift",
+      cc.gate_drift({**_321, "opus_5_5_prompt_bundle": frozenset(["turn_updates"])}, "2.1.321") != [])
 
 # The two ways 2.1.280 broke the parser, both from resolving a minified name by
 # "first match in the whole bundle": a one-letter SET name and a two-letter
@@ -522,8 +529,11 @@ _rec = {"liveReadback": {"ccVersion": "2.1.270", "when": "2026-09-15T16:00:00+02
                          "results": [{"model": "claude-fable-5-1", "targets": {"q": "PASS"}}]}}
 check("live_summary: reports a pass against the version it was measured on",
       "1/1" in cc.live_summary("2.1.270", _rec), cc.live_summary("2.1.270", _rec))
-check("live_summary: a version bump makes the proof STALE, not reusable",
-      "STALE" in cc.live_summary("2.1.271", _rec), cc.live_summary("2.1.271", _rec))
+# It names the version it was measured on and does not order a paid re-run:
+# that check is for gateways, and `status --delivered` is the free proof.
+check("live_summary: a version bump is named, not passed off as current, and orders no paid re-run",
+      "on CC 2.1.270; not repeated on 2.1.271" in cc.live_summary("2.1.271", _rec)
+      and "re-run" not in cc.live_summary("2.1.271", _rec), cc.live_summary("2.1.271", _rec))
 _bad = {"liveReadback": {**_rec["liveReadback"],
                          "results": [{"model": "claude-fable-5-1", "targets": {"q": "FAIL"}}]}}
 check("live_summary: names the model that did not quote our text back",

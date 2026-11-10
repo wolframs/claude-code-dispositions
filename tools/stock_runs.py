@@ -6,7 +6,8 @@ Anthropic's prompt text outside the replacement bodies in edits/*.md (site-prep,
 2026-09-25). `master` does not hold that line, so each merge into `site-prep-2`
 can bring new runs: a locator that spells out the sentence it locates is the
 usual one. Run this on the mirror's stage and on the current public tree; a run
-in the first and not in the second is one to trim (see ccctl.StockSentence).
+in the first and not in the second is one to trim (see ccctl.StockSentence;
+a fragment that is mostly stock keeps its stock spans as ccctl.STOCK_REF).
 
     python3 tools/stock_runs.py <tree> baseline/<ver>/prompts.json [more maps...]
 

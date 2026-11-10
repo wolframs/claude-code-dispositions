@@ -7,6 +7,7 @@ a list of one item tells the operator nothing
 batch work when one invocation genuinely replaces several separate calls
 ){return null;let t=
 You are working in an agentic habitat
+launch cheap explorers (Explore, or any agent on Haiku)
 phrase you coined this turn is not a name
 The longer you work, the less of it they see
 Reversible work within the task is already authorized
@@ -27,3 +28,5 @@ marked for what it is
 A caution you adopt is yours
 ).readFileSync(e.CLAUDE_DISPOSITION_FILE
 ).readFileSync(e.CLAUDE_TURN_RULE_FILE
+A dependency holds back only what depends on it
+or the environment context or standing instructions say otherwise

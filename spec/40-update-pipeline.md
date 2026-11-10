@@ -55,9 +55,8 @@ One cross-platform pipeline, `ccctl.py update` (+ `ccctl.py analyze`), that:
 cross-platform form of this tooling; it has binary resolution (shim-aware),
 tweakcc gating, the win32 `.cmd` spawn guard, snapshots, changelog, state.
 The update pipeline is two new subcommands plus an apply-engine refactor.
-`update-cc.sh` is retired (superseded); `patch.sh`/`apply-win32.py` remain as
-thin per-platform manual fallbacks until ccctl's engine has been exercised on
-linux too, then get deprecation headers.
+`update-cc.sh` is retired (superseded); `patch.sh` and `apply-win32.py`
+delegate to ccctl's engine (edits/README.md).
 
 **D2 — analyze before touching anything.** update-cc.sh updated first and
 drift-checked after, leaving you on the new version with a reverted patch
@@ -68,7 +67,7 @@ half-patched.
 **D3 — one apply engine, span-based, all platforms.** apply-win32.py's
 mechanism (locate each fragment's template-literal byte span via its longest
 unique piece, splice edited static text around the original interpolation
-bytes, write via `tweakcc adhoc-patch`; re-derive the 2 adhoc patches per
+bytes, write via `tweakcc adhoc-patch`; re-derive the adhoc patches per
 build) is platform-independent — nothing in it is win32-specific except the
 swap. It becomes ccctl's default engine everywhere (`applyEngine: "span"`),
 because it verifies byte-precisely and does not depend on tweakcc's
@@ -361,6 +360,32 @@ A session with no output style gets no reminder, so no rule. Kubuntu sets the st
 So `status --delivered`, which captures from an empty directory, reports the rule NOT IN
 SESSION on the Mac. That is expected, not a failure; MISSING is the failure.
 
+The global CLAUDE.md is linked the same way, to this machine's file
+(`private/global-claude-md/README.md` names it and says what each file holds):
+
+    ln -s ~/Projects/claude-code-dispositions/private/global-claude-md/<machine>.md ~/.claude/CLAUDE.md
+
+On Windows it is a symbolic link too, which needs developer mode or an
+elevated shell; in PowerShell: `New-Item -ItemType SymbolicLink -Path
+$HOME\.claude\CLAUDE.md -Target <checkout>\private\global-claude-md\win32.md`.
+The public template for the layout is `global-claude-md.example/`.
+
+The Explore agent definition is linked the same way, one file for all
+machines:
+
+    ln -s ~/Projects/claude-code-dispositions/private/global-claude-md/agents/explore.md ~/.claude/agents/explore.md
+
+Move the machine's existing file aside first and fold what only it says into
+the repo's files. The machine file imports the shared ones by relative path,
+which Claude Code resolves through the link. `status` prints the link, or says
+the file is local and so outside the sync, and the same for the Explore
+definition. The links point at the working checkout, not at `~/ccctl/repo`,
+which is a sparse clone without `private/`. `ccctl.py pull` (and so `apply`
+and `update`) fast-forwards that checkout too when it is clean, and says so
+when it is not. An edit made through a link is live at once, before it is
+committed: commit and push it in the same turn. A session that was already
+running keeps the global file it started with, and so do its sub agents.
+
 Then the two durability guards (spec/30), which the pipeline assumes:
 
 - `~/.claude/settings.json` → `env`: `DISABLE_AUTOUPDATER: "1"` **and**
@@ -404,6 +429,14 @@ server, so expired OAuth cannot block this free check. It retains configured
 models, settings and client data, but uses API-key transport: a passing capture
 does not establish account login validity or subscription-only behavior.
 
+The capture reads the server flags the last signed-in start cached and
+neither fetches nor saves its own (`CAPTURE_FLAG_ENV` in ccctl.py). Until
+2026-11-09 it fetched them as what it looks like, an API-key client behind a
+gateway, got other arms and wrote them over the shared cache: captures lacked
+stock text real sessions carry, and a `flags` run after a capture reported the
+capture's arms. So the capture is as current as that cache. `status
+--delivered` prints its date; any signed-in `claude` start refreshes it.
+
 **Sibling read-back, after any change to our text** (operator, 2026-10-08:
 "You can also query a sibling opus `claude -p` process to ask them about
 details, they needn't re-derive the whole complexity, just confirm some
@@ -426,12 +459,14 @@ first-sentence probes cannot follow. The agent that ran the update cannot do
 this by reading its own prompt if it was resumed (see "Existing sessions"),
 and a fresh sibling is cheaper than asking the operator to restart.
 
-Routine update:
+Routine update, from the workspace (`cd ~/ccctl`; the script is
+`repo/tools/ccctl.py`). Name the version: a later machine takes the checkpoint
+in `release.json`, not whatever the channel points at today.
 
 ```
-ccctl.py analyze              # channel pointer decides the target
-                              # exit 0 clean / 2 review / 3 manual / 4 tweakcc lagging
-ccctl.py update               # only after analyze is clean
+ccctl.py pull                 # its own step: it can bring a newer ccctl.py
+ccctl.py analyze <VER>        # exit 0 clean / 2 review / 3 manual / 4 no prompt data
+ccctl.py update <VER>         # only after analyze is clean
 ```
 
 Reading the exit code (also the report's `overall`):
@@ -506,6 +541,10 @@ above prove a machine, not the repo.
    or a failing test.
 
 Then `apply`/`update` on the machine being claimed, and only that machine.
+Both end with a `global CLAUDE.md:` line when this machine's global file has
+not been read since the delivered text or the CC version last changed
+(`delivered_prose_fingerprint` in ccctl.py says what counts). Do the read as
+AGENTS.md describes, commit what it changed, then `ccctl.py global-md --read`.
 
 ### Captured decisions and shared renderers (CC 2.1.312)
 

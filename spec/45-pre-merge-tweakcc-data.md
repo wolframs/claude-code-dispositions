@@ -427,7 +427,17 @@ clone is the provisioning convention for any additional POSIX machine.
 
 ## After upstream merges
 
-First check that what merged is what was reviewed:
+**A data-only seed** (a PR that adds nothing but `data/prompts/prompts-<ver>.json`,
+which is what `release.json` records for the current checkpoint) has no
+source pin to compare. Compare the file: the merged blob's SHA-1 on `main`
+against `promptData.blob`. Equal: nothing to do. Different: replace
+`baseline/<ver>/prompts.json` and `promptData` from the merged file, delete
+`~/.tweakcc/prompt-data-cache/prompts-<ver>.json` and
+`~/ccctl/snapshots/prompts-<ver>.json` on every machine that seeded
+(`load_snapshot` prefers the snapshot over the cache), and repeat `analyze`.
+
+**A source pin** (a reviewed tweakcc commit the build runs from): first check
+that what merged is what was reviewed:
 
 ```sh
 git -C <tweakcc-clone> fetch origin main

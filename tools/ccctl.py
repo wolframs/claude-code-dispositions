@@ -569,6 +569,28 @@ def pe_bun_window(binary):
         return None
 
 
+# Answers `status` may reuse within one run, or None. `status` asks the same
+# two binaries the same questions from several checks, and every repeat is a
+# pass over a few hundred MB: on 2.1.321 (342 MB) that was 5.4 s of the
+# tripwire's 10 s. Only `read_only_scans` turns this on. `apply` and `update`
+# read a file, rewrite it and read it again, sometimes within one timestamp
+# tick, so nothing that writes a binary may run inside it.
+_SCAN_CACHE = None
+
+
+@contextmanager
+def read_only_scans():
+    """Reuse `live_blob` and `is_stock` answers for the duration: for code
+    that only reads binaries."""
+    global _SCAN_CACHE
+    prev = _SCAN_CACHE
+    _SCAN_CACHE = {} if prev is None else prev
+    try:
+        yield
+    finally:
+        _SCAN_CACHE = prev
+
+
 def live_blob(binary):
     """Active module contents, excluding orphaned sources and cached bytecode.
 
@@ -577,6 +599,15 @@ def live_blob(binary):
     establish reachability. Plans use old/new bytes, never these offsets.
     Unparseable legacy bundles retain the window/whole-file fallback.
     """
+    if _SCAN_CACHE is None:
+        return _live_blob(binary)
+    key = ("blob", str(binary))
+    if key not in _SCAN_CACHE:
+        _SCAN_CACHE[key] = _live_blob(binary)
+    return _SCAN_CACHE[key]
+
+
+def _live_blob(binary):
     window, _why = bundle_window(binary)
     if not window:
         return Path(binary).read_bytes()
@@ -1171,6 +1202,67 @@ def edit_text(path):
     return FRONTMATTER.sub("", raw).rstrip("\n")
 
 
+# ---- stock spans a fragment keeps, named by digest rather than written out
+#
+# [remark] site-prep. A fragment that changes a clause or two of a stock
+# section is still a whole replacement body (tweakcc has no overlay form), so
+# written out it is Anthropic's section with a few words different. This
+# repository publishes its edits without Anthropic's prompt text, so such a
+# body keeps the stock spans it does not change as `{{stock:N:H}}`: the
+# N-character span of the fragment's stock body (`stock_body`, `${NAME}`
+# placeholders included) whose SHA-256 begins with the 16 hex digits H. The
+# spans are resolved against the stock text of the version being planned, so
+# the bytes installed are the ones the spelled-out body would install.
+#
+# It fails closed as SHELL_BLOCK_SHA256 and StockSentence do: an upstream edit
+# of one character inside a kept span leaves the reference unresolved, and an
+# unresolved body is MANUAL, never a partial patch. The reviewed pair in
+# edits/reviews.json is hashed over the resolved body, so a reference that
+# resolved to anything but the reviewed text would also read as unreviewed.
+STOCK_REF = re.compile(r"\{\{stock:(\d+):([0-9a-f]{16})\}\}")
+
+
+def stock_ref(span):
+    """The reference for `span`, a substring of a fragment's stock body."""
+    return "{{stock:%d:%s}}" % (len(span), hashlib.sha256(span.encode("utf-8")).hexdigest()[:16])
+
+
+def expand_stock_refs(body, stock):
+    """`body` with every stock reference replaced by the span it names in
+    `stock`, or None when one names no span or two different ones."""
+    out, missing = [], []
+
+    def resolve(m):
+        n, h = int(m.group(1)), m.group(2)
+        found = {stock[i:i + n] for i in range(len(stock) - n + 1)
+                 if hashlib.sha256(stock[i:i + n].encode("utf-8")).hexdigest().startswith(h)}
+        if len(found) != 1:
+            missing.append(m.group(0))
+            return m.group(0)
+        return found.pop()
+
+    text = STOCK_REF.sub(resolve, body)
+    return None if missing else text
+
+
+def fragment_body(path, entry):
+    """The body a fragment installs against prompt-data `entry`: edit_text with
+    its stock references resolved. None when a reference does not resolve, or
+    when the body has references and there is no entry to resolve them in."""
+    text = edit_text(path)
+    if not STOCK_REF.search(text):
+        return text
+    return expand_stock_refs(text, stock_body(entry)) if entry else None
+
+
+def fragment_body_or_text(path, entry):
+    """fragment_body where it resolves, else the file's own text. For readers
+    that only look for our authored words (markers, first sentences), which a
+    stock reference never stands for."""
+    body = fragment_body(path, entry)
+    return edit_text(path) if body is None else body
+
+
 def locate_span(blob, pieces):
     """(start, end, gaps) of the template literal whose static runs are
     `pieces`, or None. gaps are the original interpolation byte runs."""
@@ -1249,8 +1341,16 @@ def plan_fragments(blob, prompt_data, edit_files):
             else:
                 start, end, gaps = span
                 old = blob[start:end]
-                new = build_replacement(edit_text(f), gaps)
-                if new is None:
+                body = fragment_body(f, entry)
+                new = build_replacement(body, gaps) if body is not None else None
+                if body is None:
+                    item.update(status="MANUAL",
+                                reason="a stock span the edit keeps by reference ({{stock:N:H}}) is not in this "
+                                       "version's stock text",
+                                fix=f"upstream changed a sentence edits/{f.name} keeps; compare `ccctl.py diff stock "
+                                    f"<old> <new> {f.stem}`, then re-derive the reference with ccctl.stock_ref "
+                                    "or write the changed sentence out")
+                elif new is None:
                     item.update(status="MANUAL", reason="interpolation count changed upstream (edit's ${VAR}s no longer match)",
                                 fix=f"compare `ccctl.py diff stock <old> <new> {f.stem}` and update edits/{f.name} "
                                     "to the new interpolation structure")
@@ -1464,20 +1564,24 @@ def plan_adhocs(blob):
         b'("opus5_reduced_delegation",()=>{')
     # 2.1.312 captures booleans/tagged server facts and renders them later.
     # Cut the three renderers together, preserving Haiku early-stopping.
+    # 2.1.321 registers other boolean sections between reducesDelegation and
+    # served (`hasOriginalGamesGuidance:(s)=>s?X:null,`). They are not
+    # delegation text, so group 2 carries them through unchanged.
     m1r = list(re.finditer(
         rb'reducesDelegation:\(([\w$]+)\)=>\1\?[\w$]+:null,'
-        rb'served:([\w$]+),servedForEffort:\(([\w$]+)\)=>\3,', registry))
+        rb'((?:[\w$]+:\([\w$]+\)=>[\w$]+\?[\w$]+:null,)*)'
+        rb'served:([\w$]+),servedForEffort:\(([\w$]+)\)=>\4,', registry))
     if len(m1r) == 1 and not m1s and not m1n:
         m = m1r[0]
         served = list(re.finditer(
-            rb'function ' + re.escape(m.group(2))
+            rb'function ' + re.escape(m.group(3))
             + rb'\(e\)\{switch\(e.kind\)\{case"served":return e.text;'
               rb'case"early-stopping":return ([\w$]+);case"none":return null\}\}', blob))
         if len(served) == 1 and blob.count(m.group(0)) == 1:
-            arg, _, effort = (g.decode() for g in m.groups())
+            arg, between, _, effort = (g.decode("latin-1") for g in m.groups())
             early = served[0].group(1).decode()
             # Keep the cross-version delegation-cut marker used by status.
-            new = (f'reducesDelegation:function({arg}){{return null;let t=0}},'
+            new = (f'reducesDelegation:function({arg}){{return null;let t=0}},{between}'
                    f'served:({arg})=>{arg}.kind==="early-stopping"?{early}:null,'
                    f'servedForEffort:({effort})=>null,').encode()
             item.update(status="AUTO", old=m.group(0), new=new)
@@ -1737,7 +1841,7 @@ def plan_adhocs(blob):
         "during the work is new to them.\\n\\n"
         "So open with where things stand, and name the thing you worked on. If they read "
         "two sentences and stop, they should know whether to act. Then, in a few "
-        "short lines, what changed and what it touched: which repos, which remotes, "
+        "short lines, what changed and what it touched: which repos, which remotes (pushed or not), "
         "which live systems. Then, only when something would actually happen if they do "
         "nothing, say it as one-line bullets \\u2014 each one a consequence, not an "
         "explanation, and none carrying the fix. When nothing would, leave them out: a "
@@ -1777,10 +1881,13 @@ def plan_adhocs(blob):
         "There, write for that medium.\\n\\n"
         "For the pane: short sentences, a thought per short paragraph, a blank line "
         "between them. A bullet is one line. Bold marks a word worth finding, not the "
-        "opening of every bullet. An emoji or glyph is welcome where it marks "
-        "something. For faces, use cats (\\ud83d\\ude38 \\ud83d\\ude39 \\ud83d\\ude3c "
-        "\\ud83d\\ude40), not yellow smileys like \\ud83d\\ude03 or \\ud83d\\ude42. People "
-        "and gestures are fine.\\n\\n"
+        "opening of every bullet. Emojis and glyphs are welcome as markers, not "
+        "decoration: pick a clear one for the thing at hand, such as \\u2705 done, "
+        "\\ud83d\\udd01 running, \\u23f8 waiting on them, \\u26a0 a problem. For faces "
+        "and states and expressions, use catty emojis unless a 'yellow smiley' one "
+        "fits better. You're allowed creativity in emoji use, and similarly, you're "
+        "allowed to apply your own taste and read of the situation in how you use "
+        "them. Treat them as an additional communication layer.\\n\\n"
         "Voice is welcome too: dry humour, play, warmth, when the work leaves room for "
         "them. Never in place of the facts, and never padding. A style may set how "
         "much you write, in what form, and how proactive you are. It does not change "
@@ -2040,7 +2147,8 @@ def plan_adhocs(blob):
         rb"\{let ([\w$]+)=([\w$]+)\(\2,\3\)(&&![\w$]+)?;return`# Communicating with the user", blob))
     m3v = list(re.finditer(
         rb'if\(([\w$]+)\(r,e\)\|\|([\w$]+)\(r\)\)return [\w$]+\(r,e\)&&!n\?'
-        rb'"readable-final-message":"readable";return ([\w$]+)\(e\)\?"short":"standard"', blob))
+        # 2.1.321 renamed the lean arm "short" to "none" (no section at all).
+        rb'"readable-final-message":"readable";return ([\w$]+)\(e\)\?"(?:short|none)":"standard"', blob))
     if len(m3s) == 1 and len(m4s) == 1 and not m3n:
         cond_a, cond_b, gap, gae = (g.decode() for g in m3s[0].groups())
         lean = m4s[0].group(1).decode()
@@ -2380,10 +2488,20 @@ def span_apply(target, plan):
     Uniqueness was proven against the ORIGINAL blob; each patch mutates the
     file, so re-assert against the current bytes before every write. On linux
     every write also relocates the bundle, so the window is re-read per item
-    rather than computed once."""
+    rather than computed once.
+
+    Shrinking items go first. A bundle can only grow into the pad before its
+    header, and the pad comes from the shrinks (adhoc_patch, "alignment"). In
+    plan order a growing fragment can meet a pad the later cuts have not freed
+    yet: on 2026-11-10 one added sentence in delivering-work was refused with
+    1404 bytes of pad, while the whole plan still shrinks the bundle. The sort
+    is stable, so equal deltas keep plan order. An item whose `old` only
+    exists after another item's write would now fail the count below, loudly."""
     for item in plan:
         if item["status"] != "AUTO":
             die(f"span_apply given a non-AUTO item: {item['name']} — analyze/gate first")
+    plan = sorted(plan, key=lambda item: len(item["new"]) - len(item["old"]))
+    for item in plan:
         n = live_blob(target).count(item["old"])
         if n != 1:
             die(f"{item['name']}: old bytes occur {n}x after earlier patches — aborting "
@@ -2637,10 +2755,38 @@ def prompt_data_status(version):
     except NetworkTrouble:
         return "unknown"
     if body is None:
-        return "lagging"
+        return "available" if seed_from_checkpoint(version, cache) else "lagging"
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_bytes(body)     # same content tweakcc would cache
     return "available"
+
+
+def seed_from_checkpoint(version, cache):
+    """Upstream has no map for `version`, but the repository's checkpoint may:
+    the first machine on a release reviews a pre-merge map and commits it as
+    baseline/<ver>/prompts.json, hash-pinned in release.json (spec/45). A later
+    machine takes exactly that file. Without this, its `update` stopped at
+    BLOCKED and the seeding was a step no procedure listed (2026-11-10). Only
+    the checkpoint's own version, and only on a matching SHA-256."""
+    cfg = load_json(CONFIG, None)
+    if not cfg:
+        return False
+    repo = repo_dir(cfg)
+    data = (load_json(repo / "release.json", {}) or {}).get("promptData") or {}
+    release = load_json(repo / "release.json", {}) or {}
+    src = repo / str(data.get("path", ""))
+    if release.get("ccVersion") != version or not data.get("sha256") or not src.is_file():
+        return False
+    body = src.read_bytes()
+    if hashlib.sha256(body).hexdigest() != data["sha256"]:
+        print(f"prompt data    : {src} does not match release.json's sha256; not seeding from it")
+        return False
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_bytes(body)
+    print(f"prompt data    : upstream has no map for {version}; seeded the repository's reviewed "
+          f"checkpoint map (release.json, sha256 {data['sha256'][:12]}, "
+          f"PR {data.get('pullRequest', '?')})")
+    return True
 
 
 def tweakcc_latest():
@@ -2973,17 +3119,28 @@ def is_stock(path, markers):
 
     Whole-file on purpose: a binary whose live bundle is clean but which still
     carries our text in an orphaned copy is not something to park as pristine."""
-    return not binary_contains(path, markers, live=False) if markers else False
+    if not markers:
+        return False
+    if _SCAN_CACHE is None:
+        return not binary_contains(path, markers, live=False)
+    key = ("stock", str(path), tuple(markers))
+    if key not in _SCAN_CACHE:
+        _SCAN_CACHE[key] = not binary_contains(path, markers, live=False)
+    return _SCAN_CACHE[key]
 
 
 def pristine_source(version, markers):
     """A stock binary for `version` on this machine, or None.
-    Order: versions/<ver> (the native installer keeps these pristine — unless
-    a past in-place patch dirtied it), then tweakcc's native-binary.backup."""
+    Order: versions/<ver>.stock, versions/<ver> (the native installer keeps
+    these pristine — unless a past in-place patch dirtied it), then tweakcc's
+    native-binary.backup."""
     for vdir in versions_dirs():
         # after a POSIX ccctl update, versions/<ver> is patched and the
-        # pristine lives alongside as versions/<ver>.stock (spec/40)
-        for cand in (vdir / version, vdir / (version + ".stock")):
+        # pristine lives alongside as versions/<ver>.stock (spec/40). The
+        # parked copy is asked first: where it exists it is the answer, and
+        # versions/<ver> beside it is the patched build, a whole-file scan
+        # that can only say no.
+        for cand in (vdir / (version + ".stock"), vdir / version):
             if cand.exists() and is_stock(cand, markers):
                 return cand
     backup = TWEAKCC_DIR / "native-binary.backup"
@@ -3664,8 +3821,9 @@ def fragment_review_matches(review, entry, edit):
     if not isinstance(review, dict) or not review.get("reason"):
         return False
     digest = lambda text: hashlib.sha256(text.encode("utf-8")).hexdigest()
-    return (review.get("stockSha256") == digest(stock_body(entry))
-            and review.get("editSha256") == digest(edit_text(edit)))
+    body = fragment_body(edit, entry)
+    return (body is not None and review.get("stockSha256") == digest(stock_body(entry))
+            and review.get("editSha256") == digest(body))
 
 
 def analyze_core(cfg, target_ver):
@@ -3922,7 +4080,12 @@ def cmd_init(args):
 def require_cfg():
     cfg = load_json(CONFIG, None)
     if not cfg:
-        die(f"no {CONFIG.name} here — run: ccctl.py init <git-url>")
+        # An agent that lands here is usually standing in the repo checkout,
+        # where `init` is the wrong advice: it would start a second workspace
+        # inside the repository.
+        die(f"no {CONFIG.name} in {HERE} — run this from the machine's ccctl workspace "
+            f"(TODO.md's machine table names it), or `ccctl.py init <git-url>` on a "
+            f"machine that has none")
     return {**CONFIG_DEFAULTS, **cfg}
 
 
@@ -4005,7 +4168,50 @@ def cmd_pull(args, quiet=False):
         print(f"updated {before} -> {after}\n{summary}")
     elif not quiet:
         print(f"already up to date at {after}")
+    pull_linked_checkouts(cfg)
     return after
+
+
+def linked_user_files():
+    """The files under ~/.claude this repository provides by link (spec/40)."""
+    home = Path.home() / ".claude"
+    return [disposition_file(), turn_rule_file(), home / "CLAUDE.md", home / "agents" / "explore.md"]
+
+
+def linked_checkouts(cfg):
+    """Git checkouts, other than the workspace clone, that those links point
+    into. The links go to the operator's working checkout, which no ccctl
+    command touched: a machine could apply a round and keep reading last
+    week's global CLAUDE.md (found 2026-11-10 by a newcomer read)."""
+    own, out = repo_dir(cfg), []
+    for f in linked_user_files():
+        if not f.is_symlink():
+            continue
+        try:
+            target = f.resolve(strict=True)
+        except OSError:
+            continue
+        top = next((d for d in target.parents if (d / ".git").exists()), None)
+        if top and top != own and top not in out:
+            out.append(top)
+    return out
+
+
+def pull_linked_checkouts(cfg):
+    for top in linked_checkouts(cfg):
+        g = lambda *a: run(["git", "-C", str(top), *a])
+        if g("status", "--porcelain").stdout.strip():
+            print(f"linked files   : {top} has uncommitted changes, so it was NOT pulled; the files "
+                  f"linked from ~/.claude stay as they are there. Commit or stash, then pull it")
+            continue
+        before = g("rev-parse", "--short", "HEAD").stdout.strip()
+        r = g("pull", "--ff-only")
+        after = g("rev-parse", "--short", "HEAD").stdout.strip()
+        if r.returncode != 0:
+            print(f"linked files   : {top} could not fast-forward ({(r.stderr or '').strip()[-120:]}); "
+                  f"the files linked from ~/.claude stay at {before}")
+        elif before != after:
+            print(f"linked files   : {top} {before} -> {after} (the checkout ~/.claude links into)")
 
 
 def adhoc_landed(binary, version, markers):
@@ -4113,6 +4319,11 @@ def cmd_status(args):
         return cmd_live(args)
     if getattr(args, "delivered", False):
         return cmd_delivered(args)
+    with read_only_scans():
+        return _cmd_status(args)
+
+
+def _cmd_status(args):
     if getattr(args, "quiet", False):
         # First, before the binary scan, so a slow or failing check below
         # cannot take the session line down with it.
@@ -4265,7 +4476,7 @@ def cmd_status(args):
                       f"and this binary does not switch it off — run ccctl.py apply "
                       f"(markers cannot see this)")
             else:
-                print(f"[ccctl] MODEL GATE UNMASKED: {cap} is on by model on Fable 5.1, which "
+                print(f"[ccctl] MODEL GATE UNMASKED: {cap} is on by model (Fable 5.1's clause), which "
                       f"{MODEL_GATES[cap][1].lower()} — add \"{var}\": \"0\" to the env block of "
                       f"{Path.home() / '.claude' / 'settings.json'} (markers cannot see this)")
         machine_settings_quiet()
@@ -4479,6 +4690,9 @@ def cmd_status(args):
     print(f"turn rule      : {where}" + (f" -> {where.resolve()}" if where.is_symlink() else "")
           + (f", {where.stat().st_size} bytes, read each turn" if where.exists()
              else " absent, nothing added to the reminder"))
+    print(f"global CLAUDE  : {global_claude_md_line()}")
+    print(f"                 {global_claude_md_review(cfg)[1]}")
+    print(f"explore agent  : {explore_agent_line()}")
     verdict, detail = tripwire_state()
     print(f"tripwire       : {verdict if verdict == 'ok' else verdict.upper()} — {detail}")
     if verdict == "ok":
@@ -4526,10 +4740,25 @@ def cmd_status(args):
     print(f"restore path   : {'; '.join(paths) if paths else 'NO BACKUP'}")
 
 
+def pull_then_restart_if_changed(args):
+    """`apply` and `update` pull first, and the pull can replace this very
+    file. Python keeps running the old code against the new edits/, which on
+    2026-11-10 would have run a round without the fix it had just fetched.
+    Start over once, on the new code."""
+    me = Path(__file__).resolve()
+    before = hashlib.sha256(me.read_bytes()).hexdigest()
+    cmd_pull(args, quiet=True)
+    if hashlib.sha256(me.read_bytes()).hexdigest() != before and not os.environ.get("CCCTL_RESTARTED"):
+        print("ccctl.py changed in this pull; starting again on the new code")
+        sys.stdout.flush()
+        os.environ["CCCTL_RESTARTED"] = "1"
+        os.execv(sys.executable, [sys.executable, str(me), *sys.argv[1:]])
+
+
 def cmd_apply(args):
     cfg = require_cfg()
     if not args.no_pull:
-        cmd_pull(args, quiet=True)
+        pull_then_restart_if_changed(args)
     edits = repo_edits(cfg)
     markers = repo_markers(cfg)
     apply_machine_settings()
@@ -4566,6 +4795,7 @@ def cmd_apply(args):
                        f"markers verified in `{binary.name}`")
     print(f"PATCHED and verified: CC {ver}, repo {commit}")
     prune_nudge(markers)
+    report_global_claude_md(cfg)
 
 
 def enter_stock_arm(cfg, ver, reason=None, pristine=None):
@@ -4637,8 +4867,21 @@ def apply_engine_tweakcc(cfg, ver, edits, markers):
           "Close sessions first; the default 'span' engine avoids all of this.")
     target = TWEAKCC_DIR / "system-prompts"
     target.mkdir(parents=True, exist_ok=True)
+    data = None
     for f in edits:
-        shutil.copy2(f, target / f.name)
+        raw = f.read_text(encoding="utf-8").replace("\r\n", "\n")
+        if not STOCK_REF.search(raw):
+            shutil.copy2(f, target / f.name)
+            continue
+        # tweakcc reads the body as prompt text, so a kept stock span is
+        # written out here, from this version's stock, never as its reference.
+        data = load_snapshot(ver) if data is None else data
+        body = fragment_body(f, (data or {}).get(f.stem))
+        if body is None:
+            die(f"{f.name}: a stock reference does not resolve against {ver}'s prompt data — "
+                f"run `ccctl.py analyze {ver}`")
+        head = FRONTMATTER.match(raw)
+        (target / f.name).write_text((head.group(0) if head else "") + body + "\n", encoding="utf-8")
     print(f"synced {len(edits)} fragment(s) into {target}")
 
     r = run([*tweakcc_node(), "--apply", "-y"], timeout=600)
@@ -4708,7 +4951,7 @@ def cmd_analyze(args):
 def cmd_update(args):
     cfg = require_cfg()
     if not getattr(args, "no_pull", False):
-        cmd_pull(args, quiet=True)
+        pull_then_restart_if_changed(args)
     stock = getattr(args, "stock", False)
     if not repo_markers(cfg):
         die("MARKERS.txt is empty — refusing an unverifiable update"
@@ -4792,6 +5035,7 @@ def cmd_update(args):
     print(f"UPDATED and verified: CC {installed} -> {target}, repo {commit}. "
           f"Start a fresh session to use it.")
     report_subagent_model(live, state)
+    report_global_claude_md(cfg)
 
 
 def report_subagent_model(binary, state):
@@ -5102,7 +5346,36 @@ MODEL_GATE_CLAUSES = {
     # clauses moot for it; the parse stays as a detector.
     # `quizzical_shore` is not prompt text: it decides whether a hook notice
     # renders hidden or faint (`tengu_quizzical_shore`, `tengu_lilac_dune`).
-    "opus_5_5_prompt_bundle": (("silent_turn_reminder", "quizzical_shore"), "2.1.280"),
+    # 2.1.321 swapped `quizzical_shore` for `original_games_guidance` here
+    # (the 2.1.280 set is in EARLIER_GATE_CLAUSES).
+    "opus_5_5_prompt_bundle": (("silent_turn_reminder", "original_games_guidance"), "2.1.280"),
+    # CC 2.1.321 shipped Fable 5.2 with a clause of its own. Three arms are new
+    # stock sections ("Original games", "Finishing work", "Memory, notes and
+    # feedback"); left stock deliberately on 2026-11-09 (operator: "patch only
+    # what we can patch, leave the rest alone, just note it",
+    # notes/2026-11-09-linux-2.1.321.md). Both reminder arms are moot under
+    # `silent-turn-reminder-off`, measured quiet on Fable 5.2.
+    "fable_5_2_prompt_bundle": (("silent_turn_reminder", "timed_silent_turn_reminder",
+                                 "original_games_guidance", "finishing_work_guidance",
+                                 "memory_guidance"), "2.1.321"),
+}
+
+# What a clause-armed capability outside MODEL_GATES does, for `flags`.
+# "stock text" was all that table said, and for the clocked reminder that read
+# as one more injection left on.
+CLAUSE_CAPABILITY_NOTES = {
+    "timed_silent_turn_reminder": (
+        "puts the reminder on a 60 s clock instead of a turn count; read only by the "
+        "consumer silent-turn-reminder-off cuts, so off with it"),
+    "original_games_guidance": 'stock "original games" section, left stock (TODO 58)',
+    "finishing_work_guidance": 'stock "Finishing work" section, trimmed by our fragment since 2026-11-10',
+    "memory_guidance": 'stock "Memory, notes and feedback" section, two clauses changed by our fragment since 2026-11-10',
+}
+
+# Clause sets a model capability carried on an earlier CC, still accepted so a
+# machine a round behind does not report its own past as drift.
+EARLIER_GATE_CLAUSES = {
+    "opus_5_5_prompt_bundle": (("silent_turn_reminder", "quizzical_shore"),),
 }
 
 # A fourth way to arm a gate capability, and one no clause parse can see: the
@@ -5405,7 +5678,8 @@ def gate_drift(found, version=None, catalogue=None):
         entry = MODEL_GATE_CLAUSES.get(model_cap)
         if entry is None:
             drift.append(f"NEW clause: {model_cap} arms {sorted(caps)}")
-        elif caps not in (frozenset(entry[0]), frozenset(entry[0]) - BINARY_MASKED):
+        elif not any(caps in (frozenset(c), frozenset(c) - BINARY_MASKED)
+                     for c in (entry[0], *EARLIER_GATE_CLAUSES.get(model_cap, ()))):
             # the second form is our own adhoc's work on a patched binary
             drift.append(f"{model_cap} clause is {sorted(caps)}, "
                          f"table says {sorted(entry[0])}")
@@ -5753,12 +6027,16 @@ def live_prompt(questions):
               "the single word ABSENT.")
 
 
-def live_expected(cfg, tids):
+def live_expected(cfg, tids, snapshot=None):
     """[(target id, first sentence we deployed, source path)] for one question."""
     out = []
     for tid in tids:
         t = repo_target(cfg, tid)
-        out.append((tid, first_sentence(edit_text(repo_dir(cfg) / t["source"])), t["source"]))
+        path = repo_dir(cfg) / t["source"]
+        if snapshot is None and STOCK_REF.search(edit_text(path)):
+            snapshot = load_snapshot(cc_version()) or {}
+        body = fragment_body_or_text(path, (snapshot or {}).get(tid))
+        out.append((tid, first_sentence(body), t["source"]))
     return out
 
 
@@ -5814,7 +6092,8 @@ def live_summary(ver, state=None):
     whether it still describes the binary that is installed now."""
     rec = live_record(state)
     if not rec:
-        return "never run on this machine — `ccctl.py status --live` (spends turns)"
+        return ("never run on this machine; needed only where a gateway rewrites requests "
+                "after CC (`ccctl.py status --live`, one paid turn per model)")
     rows = rec.get("results") or []
     # Only a FAIL counts against a model; an unasked question is not a verdict.
     bad = [r for r in rows if "FAIL" in (r.get("targets") or {}).values()]
@@ -5824,7 +6103,13 @@ def live_summary(ver, state=None):
             f"{rec.get('when', '?')[:10]}"
             + (f" ({unasked} question(s) unasked)" if unasked else ""))
     if rec.get("ccVersion") != ver:
-        return f"{head} — but that was CC {rec.get('ccVersion')}, this is {ver}: STALE, re-run"
+        # Not "STALE, re-run": that line stood on every machine from 2.1.278
+        # on, asking for paid turns the procedure spends only behind a gateway
+        # (AGENTS.md, update step 2). A standing order nobody should follow
+        # teaches readers to skip the lines beside it.
+        return (f"{head}, on CC {rec.get('ccVersion')}; not repeated on {ver}. Needed only "
+                f"where a gateway rewrites requests after CC — `status --delivered` is the "
+                f"proof otherwise")
     if bad:
         return f"{head} — {', '.join(r['model'] for r in bad)} did NOT"
     return head
@@ -6049,6 +6334,25 @@ DELIVERED_EVERYWHERE = ("disposition-floor-under-every-output-style",
                         "system-prompt-correction-restraint")
 
 
+# A capture must read the operator's server flags, not fetch its own. Left to
+# itself the session asks GrowthBook as what it looks like, an API-key client
+# behind a gateway at 127.0.0.1 (`apiBaseUrlHost` is a targeting attribute), is
+# answered with other arms, and SAVES them over the shared cache in
+# ~/.claude.json. Measured 2026-11-09 on 2.1.321: `tengu_cedar_lantern` reads
+# true after any signed-in start and false after any capture, so every capture
+# lacked the stock act_dont_rederive line real sessions carry, and a `flags`
+# run after `status --delivered` reported the capture's arms as the server's
+# (the cedar_lantern/quiet_dolphin "changes" in the round notes since
+# 2026-10-16). With telemetry off CC neither fetches nor saves, and this
+# switch lets it keep reading the cache. The first faithful captures also
+# showed a per-turn line no capture had: `<total_tokens>N tokens left</total_tokens>`,
+# a counter padded to 15,000,000 (`tengu_lapis_anchor`: "padded-countdown") on
+# the models whose catalogue entry lists `total_tokens_reminder` (Opus 5,
+# Fable 5.1, Haiku 5.5 on 2.1.321). A reading, not an instruction; left on.
+CAPTURE_FLAG_ENV = {"DISABLE_TELEMETRY": "1",
+                    "CLAUDE_CODE_GB_DISK_CACHE_WHEN_TELEMETRY_OFF": "1"}
+
+
 def capture_env(extra):
     """This process's environment minus everything CC reads as its own
     identity, plus `extra`. ANTHROPIC_* goes too, so the base URL set here is
@@ -6100,7 +6404,7 @@ def scripted_reply(n, model, tool_input=None, stream=True):
         {"type": "message_stop"}]), "text/event-stream"
 
 
-def capture_request(model, shape, binary=None, timeout=120, turns=0):
+def capture_request(model, shape, binary=None, timeout=120, turns=0, env_more=None, pace=0.0):
     """(requests, error): the /v1/messages bodies CC sends for one session of
     this shape, answered on 127.0.0.1 so nothing reaches the API.
 
@@ -6111,6 +6415,10 @@ def capture_request(model, shape, binary=None, timeout=120, turns=0):
     which exists only after the first request: the silent-turn reminder fires
     after five silent turns, for one. Side calls (titles, classifiers) are
     answered and left out.
+
+    `env_more` is added to the session's environment and `pace` is slept
+    before each silent reply: together they let a reminder that runs on a
+    clock be reached (see `REMINDER_CLOCK`).
 
     `binary` is the live CC binary by default. A test hands in a stand-in
     instead, as a path or as an argv prefix such as [python, script] — the
@@ -6157,6 +6465,8 @@ def capture_request(model, shape, binary=None, timeout=120, turns=0):
                 return self.refuse(400)
             n = len(got)
             silent = main and n <= turns
+            if silent and pace:
+                time.sleep(pace)
             payload, kind = scripted_reply(n, body.get("model", model),
                                            {"file_path": str(probe)} if silent else None,
                                            stream=bool(body.get("stream")))
@@ -6166,7 +6476,7 @@ def capture_request(model, shape, binary=None, timeout=120, turns=0):
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Sink)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     proj = cc_project_dir(cwd)
-    env = capture_env({**env_extra,
+    env = capture_env({**CAPTURE_FLAG_ENV, **env_extra, **(env_more or {}),
                        # Local capture must work even when cached OAuth has expired.
                        "ANTHROPIC_API_KEY": "ccctl-local-capture",
                        "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{srv.server_address[1]}"})
@@ -6238,6 +6548,30 @@ def per_turn_injections(reqs):
 SILENT_REMINDER_OPENING = "The user hasn't heard from you"
 
 
+# CC 2.1.321: on a model that carries `timed_silent_turn_reminder` (Fable 5.2's
+# clause), or with a `silent_turn_reminder_seconds` client-data key, the
+# reminder stops counting turns and runs on a clock: at least one silent turn
+# and 60 s of silence. A scripted session is over in five seconds, so the stock
+# 2.1.321 binary read "quiet" on Fable 5.2 in the very check that exists to
+# catch it (measured 2026-11-09: stock quiet as scripted, reminder at request 4
+# with the clock at 1 s; the patched binary quiet under both). For those
+# sessions the capture sets CC's own override to one second and spaces its
+# silent replies, so the clock runs out inside the script.
+REMINDER_CLOCK_VAR = "CLAUDE_CODE_SILENT_TURN_REMINDER_SECONDS"
+REMINDER_CLOCK_KEY = "silent_turn_reminder_seconds"
+REMINDER_CLOCK_PACE = 0.4
+
+
+def reminder_on_a_clock(model_caps, data):
+    """Does this session's reminder run on a clock rather than a turn count?
+    `model_caps` is the model's catalogue entry, `data` its client data."""
+    timed = {m for m, (caps, _v) in MODEL_GATE_CLAUSES.items()
+             if "timed_silent_turn_reminder" in caps} | {"timed_silent_turn_reminder"}
+    seconds = (data or {}).get(REMINDER_CLOCK_KEY)
+    return bool(set(model_caps or ()) & timed) or (
+        isinstance(seconds, (int, float)) and not isinstance(seconds, bool) and seconds >= 1)
+
+
 def silent_reminder_turns():
     """After how many silent turns CC sends the reminder: the env override,
     else the cached server value, else CC's own default of 5."""
@@ -6273,6 +6607,126 @@ def delivered_style(messages):
     arrives as a mid-conversation system message headed this way."""
     m = re.search(r"^# Output Style: (.+)$", messages, re.M)
     return m.group(1).strip() if m else None
+
+
+def global_claude_md_line(path=None):
+    """What this machine's ~/.claude/CLAUDE.md is: a link into the repo's
+    private/global-claude-md/ (in the cross-machine sync), a link elsewhere, a
+    local file (outside the sync; spec/40's runbook says how to link it), or
+    absent. Read-only, and never a failure: a machine may not be linked yet."""
+    path = Path(path) if path else Path.home() / ".claude" / "CLAUDE.md"
+    if not path.exists() and not path.is_symlink():
+        return f"{path} absent"
+    if not path.is_symlink():
+        return (f"{path} is a local file, {path.stat().st_size} bytes: outside the "
+                f"cross-machine sync (spec/40, runbook)")
+    target = path.resolve()
+    if not target.exists():
+        return f"{path} -> {target} BROKEN LINK: sessions get no global instructions"
+    imports = [ln[1:].strip() for ln in target.read_text(encoding="utf-8").splitlines()
+               if ln.startswith("@")]
+    missing = [name for name in imports if not (target.parent / name).exists()]
+    if missing:
+        return f"{path} -> {target}, MISSING import(s): {', '.join(missing)}"
+    return f"{path} -> {target}, imports {', '.join(imports) or 'nothing'}"
+
+
+def explore_agent_line(path=None):
+    """What ~/.claude/agents/explore.md is on this machine. Absent or broken
+    means the built-in Explore, which runs on the parent's model and carries
+    none of the operator's search rule."""
+    path = Path(path) if path else Path.home() / ".claude" / "agents" / "explore.md"
+    builtin = "the built-in Explore is in use, on the parent's model"
+    if not path.exists() and not path.is_symlink():
+        return f"{path} absent: {builtin}"
+    if not path.is_symlink():
+        return f"{path} is a local file: outside the cross-machine sync (spec/40, runbook)"
+    target = path.resolve()
+    if not target.exists():
+        return f"{path} -> {target} BROKEN LINK: {builtin}"
+    return f"{path} -> {target}"
+
+
+# What the global file is read against: the prose a session is delivered from
+# this repository, and the CC version it is delivered on. A fingerprint, not a
+# git diff: the generated A/B view flips with the platform of whoever rebuilt
+# it, and release.json moves for provenance notes, so a diff over them called
+# every machine stale after a round that changed no delivered word
+# (2026-11-10, the evening the Windows row was written).
+GLOBAL_MD_STATE_KEY = "globalClaudeMdRead"
+PROSE_CONSTANTS = ("ACTION_CAUTION_NEW", "BASH_NOTE_NEW", "GIT_COMPACT_NEW", "SUBAGENT_DELEGATION_OPT_IN")
+
+
+def delivered_prose_fingerprint(cfg):
+    """SHA-256 over the fragment bodies, the reporting floor and the other
+    authored replacement sentences, and the checkpoint's CC version."""
+    h = hashlib.sha256()
+    for f in repo_edits(cfg):
+        h.update(f.name.encode()); h.update(edit_text(f).encode("utf-8"))
+    src = Path(__file__).read_text(encoding="utf-8")
+    floor = re.search(r"\n    FLOOR = \((.*?)\n    \)\n", src, re.S)
+    h.update((floor.group(1) if floor else "NO FLOOR FOUND").encode("utf-8"))
+    for name in PROSE_CONSTANTS:
+        h.update(repr(globals().get(name)).encode("utf-8"))
+    h.update(str((load_json(repo_dir(cfg) / "release.json", {}) or {}).get("ccVersion")).encode())
+    return h.hexdigest()
+
+
+def global_claude_md_review(cfg, state=None, fingerprint=None):
+    """(stale, line): has this machine's global CLAUDE.md been read against
+    the tweaks as they now stand? The read itself is an agent's judgment
+    (AGENTS.md, "The global CLAUDE.md"); this only remembers what the
+    delivered prose was when it last happened here, and says when that prose
+    or the CC version has moved since. Operator, 2026-11-10: an agent
+    upgrading a machine from inside the repo should know the file may hold
+    what the tweaks have made obsolete."""
+    state = load_json(STATE, {}) if state is None else state
+    seen = state.get(GLOBAL_MD_STATE_KEY) or {}
+    how = ("read it against the current tweaks (AGENTS.md, \"The global CLAUDE.md\"), "
+           "then `ccctl.py global-md --read`")
+    if not seen.get("commit"):
+        return True, f"never read against the tweaks on this machine: {how}"
+    when = f"{seen['commit'][:8]} ({seen.get('at', '?')})"
+    if seen.get("fingerprint"):
+        now = fingerprint or delivered_prose_fingerprint(cfg)
+        if now == seen["fingerprint"]:
+            return False, f"read against the tweaks at {when}; nothing delivered has changed since"
+        return True, (f"the delivered text or the CC version has changed since it was read at {when}. "
+                      f"{how[0].upper() + how[1:]}")
+    # A read recorded before fingerprints (2026-11-10): the fragments only.
+    out = git(cfg, "diff", "--name-only", seen["commit"], "HEAD", "--", "edits")
+    if out.returncode != 0:
+        return True, (f"read at {seen['commit'][:8]}, which this checkout does not have "
+                      f"({(out.stderr or '').strip()[-80:]}): {how}")
+    changed = [ln for ln in out.stdout.splitlines() if ln.strip()]
+    if not changed:
+        return False, f"read against the tweaks at {when}; no fragment has changed since"
+    shown = ", ".join(changed[:4]) + (f" and {len(changed) - 4} more" if len(changed) > 4 else "")
+    return True, (f"the tweaks have changed since it was read at {when}: {shown}. "
+                  f"{how[0].upper() + how[1:]}")
+
+
+def cmd_global_md(args):
+    """Show, or record, this machine's read of its global CLAUDE.md."""
+    cfg = require_cfg()
+    print(f"global CLAUDE  : {global_claude_md_line()}")
+    if getattr(args, "read", False):
+        state = load_json(STATE, {})
+        commit = git(cfg, "rev-parse", "HEAD").stdout.strip()
+        state[GLOBAL_MD_STATE_KEY] = {"commit": commit, "at": time.strftime("%Y-%m-%d"),
+                                      "fingerprint": delivered_prose_fingerprint(cfg)}
+        save_json(STATE, state)
+        print(f"recorded: read against the tweaks at {commit[:8]}")
+        return
+    print(f"                 {global_claude_md_review(cfg)[1]}")
+
+
+def report_global_claude_md(cfg):
+    """The closing line of `apply` and `update`: a round is not finished while
+    the global file has not been read against what the round just delivered."""
+    stale, line = global_claude_md_review(cfg)
+    if stale:
+        print(f"global CLAUDE.md: {global_claude_md_line()}\n  {line}")
 
 
 def disposition_file():
@@ -6313,14 +6767,14 @@ def turn_rule_verdict(reqs, probe):
     return "MISSING", f"{turn_rule_file()} exists and its text is not in the reminder"
 
 
-def marker_owners(cfg, markers, adhoc_plan):
+def marker_owners(cfg, markers, adhoc_plan, snapshot=None):
     """{marker: target id} for every marker that is prompt prose. Fragment
     markers are found in the edit bodies, adhoc ones in the replacement bytes
     the plan derives; a marker that is code (the delegation cut's `let t=`)
     can never appear in a request and is left out."""
     targets = load_json(repo_dir(cfg) / "edits" / "targets.json", [])
-    bodies = {t["id"]: edit_text(repo_dir(cfg) / t["source"]) for t in targets
-              if t.get("implementation") == "plan_fragments"}
+    bodies = {t["id"]: fragment_body_or_text(repo_dir(cfg) / t["source"], (snapshot or {}).get(t["id"]))
+              for t in targets if t.get("implementation") == "plan_fragments"}
     owners = {}
     for mk in markers:
         if CODEISH_RE.search(mk) or mk.startswith(")"):
@@ -6334,6 +6788,29 @@ def marker_owners(cfg, markers, adhoc_plan):
     return owners
 
 
+def cut_only_targets(cfg, owners, snapshot, antimarkers):
+    """{target id: (cut sentences, kept probe)} for fragments that only remove
+    stock text, so carry no marker of ours and would get no row at all. Found
+    2026-11-10: the trimmed "Finishing work" was delivered and unscored. A cut
+    sentence in the request means stock holds the slot; the kept probe without
+    one means our trim arrived."""
+    targets = load_json(repo_dir(cfg) / "edits" / "targets.json", [])
+    owned, out = set(owners.values()), {}
+    for t in targets:
+        tid = t["id"]
+        if t.get("implementation") != "plan_fragments" or tid in owned or tid not in (snapshot or {}):
+            continue
+        body = fragment_body(repo_dir(cfg) / t["source"], snapshot[tid])
+        if body is None:
+            continue
+        stock = stock_body(snapshot[tid])
+        cuts = [a for a in antimarkers if a in stock and a not in body]
+        lines = [ln for ln in body.splitlines() if len(ln) >= 80 and "${" not in ln[:80]]
+        if cuts and lines:
+            out[tid] = (cuts, max(lines, key=len)[:80])
+    return out
+
+
 def stock_probes(entry, n=3):
     """Short verbatim runs from the middle of a fragment's longest stock
     pieces: present in a request means upstream's text holds the slot."""
@@ -6341,7 +6818,7 @@ def stock_probes(entry, n=3):
     return [p[len(p) // 2 - 25: len(p) // 2 + 25] for p in runs[:n]]
 
 
-def delivered_verdicts(req, owners, snapshot=None, disposition=None):
+def delivered_verdicts(req, owners, snapshot=None, disposition=None, cut_only=None):
     """[(target id, verdict, detail)] for one captured request.
 
     DELIVERED       our text is in the request, every marker of it
@@ -6424,6 +6901,15 @@ def delivered_verdicts(req, owners, snapshot=None, disposition=None):
         else:
             rows.append((tid, "NOT IN SESSION",
                          "neither ours nor upstream's text for this slot is in the request"))
+    for tid, (cuts, kept) in sorted((cut_only or {}).items()):
+        back = [c for c in cuts if c in everything]
+        if back:
+            rows.append((tid, "DISPLACED", f"the stock sentence '{back[0][:48]}' is in the request"))
+        elif kept in everything:
+            rows.append((tid, "DELIVERED", "system prompt: the trimmed section, without the sentences we cut"))
+        else:
+            rows.append((tid, "NOT IN SESSION", "this model does not get the section"))
+    rows.sort(key=lambda r: r[0])
     if disposition:
         rows.append(("disposition-file", "DELIVERED" if disposition in system else "MISSING",
                      "system prompt" if disposition in system
@@ -6590,8 +7076,9 @@ def cmd_delivered(args):
         die(f"no parked pristine {ver} — the adhoc markers cannot be tied to their targets "
             f"without one; run `ccctl.py analyze {ver}`")
     print(f"deriving marker owners against pristine {Path(src).name} ...")
-    owners = marker_owners(cfg, markers, plan_adhocs(live_blob(src)))
     snap = load_snapshot(ver)
+    owners = marker_owners(cfg, markers, plan_adhocs(live_blob(src)), snap)
+    cut_only = cut_only_targets(cfg, owners, snap, repo_antimarkers(cfg))
     catalogue = catalogue_models(binary)
     models, seen = [], set()
     for spelling in ([args.model] if getattr(args, "model", None) else configured_models()):
@@ -6608,10 +7095,22 @@ def cmd_delivered(args):
     reminder_text = env.get("CLAUDE_CODE_SILENT_TURN_REMINDER_TEXT")
     print(f"delivered prompt, CC {ver} — captured on 127.0.0.1, nothing sent to the API; "
           f"each session scripted through {turns} silent tool turns")
+    cache_switch = "CLAUDE_CODE_GB_DISK_CACHE_WHEN_TELEMETRY_OFF"
+    if cache_switch in binary_contains(binary, [cache_switch]):
+        print(f"server flags: as cached by the last signed-in start ({server_arms()[1] or 'unknown'}); "
+              f"the captures neither fetch nor save them")
+    else:
+        print(f"server flags: CC {ver} has no {cache_switch}, so these captures run on flag "
+              f"DEFAULTS and cannot show a server arm; `flags` still reads the cache")
     for shape in shapes:
         print(f"\n{shape}: {DELIVERED_SHAPES[shape][0]}")
         for spelling, mid in models:
-            reqs, err = capture_request(spelling, shape, binary, turns=turns)
+            data = client_data_slots().get((mid, SHAPE_ENTRYPOINT[shape]), ({}, 0))[0]
+            clocked = reminder_on_a_clock(catalogue.get(mid), data)
+            reqs, err = capture_request(
+                spelling, shape, binary, turns=turns,
+                env_more={REMINDER_CLOCK_VAR: "1"} if clocked else None,
+                pace=REMINDER_CLOCK_PACE if clocked else 0.0)
             if err:
                 print(f"  {spelling}: CAPTURE FAILED — {err}")
                 results.append({"shape": shape, "model": spelling, "error": err})
@@ -6620,14 +7119,13 @@ def cmd_delivered(args):
             req = reqs[0]
             system, messages, _tools = request_texts(req)
             heads = [l[2:] for l in system.splitlines() if l.startswith("# ")]
-            data = client_data_slots().get((mid, SHAPE_ENTRYPOINT[shape]), ({}, 0))[0]
             style = delivered_style(messages)
             print(f"  {spelling}  ({len(system):,} chars of system prompt; style: {style or 'none'}"
                   + (f"; experiment: {data['experimentKey']}" if data.get("experimentKey") else "")
                   + ")")
             print(f"    sections: {' | '.join(heads)}")
             verdicts, arms = {}, {}
-            rows = delivered_verdicts(req, owners, snap, disposition_probe())
+            rows = delivered_verdicts(req, owners, snap, disposition_probe(), cut_only)
             if turn_rule_probe():
                 rows.append(("turn-rule-file", *turn_rule_verdict(reqs, turn_rule_probe())))
             for tid, verdict, detail in rows:
@@ -6663,6 +7161,9 @@ def cmd_delivered(args):
                                  f"switch it off"), "UNMASKED"
             else:
                 note = f"none in {len(reqs) - 1} silent tool turns"
+                if clocked:
+                    note += (", with this model's reminder clock set to 1 s and "
+                             f"{REMINDER_CLOCK_PACE:g} s between turns")
                 if armed:
                     note += " — although a server arm assigns it: switched off here"
                 verdict = "quiet"
@@ -6677,6 +7178,7 @@ def cmd_delivered(args):
             results.append({"shape": shape, "model": spelling, "id": mid, "style": style,
                             "experiment": data.get("experimentKey"), "sections": heads,
                             "verdicts": verdicts, "arms": arms, "silentReminderAt": nag,
+                            "reminderClocked": clocked,
                             "perTurn": [[n, t[:200]] for n, t in injected]})
     # A NARROWED run is a probe, not a proof. `--model`/`--shape` exist to ask
     # one question — "is Opus 5.5 quiet on this build?" — and recording that as
@@ -7140,6 +7642,10 @@ def arms_drift(current, state):
 
 def cmd_flags(args):
     """What the server is currently arming, and what our env is masking."""
+    # The delta below is against this workspace's state file. Run from any
+    # other directory it compared against nothing, reported every key as first
+    # seen and left a state file behind (2026-11-09: the repo root, committed).
+    require_cfg()
     current, when, have_cache = server_arms()
     state = load_json(STATE, {})
     env = settings_env()
@@ -7206,7 +7712,7 @@ def cmd_flags(args):
         evs = f"{var.split('_')[-1].lower()}={val}" if val is not None else "-"
         whose = SERVER_ARMS.get(f"tengu_{cap}", (None, None, "stock"))[2]
         print(f"  {cap:25} {model_cap:24} {evs:10} {whose:6} "
-              f"{'carries our text; env wins ahead of the clause (item 19)' if whose == 'OURS' else 'stock text'}")
+              f"{'carries our text; env wins ahead of the clause (item 19)' if whose == 'OURS' else CLAUSE_CAPABILITY_NOTES.get(cap, 'stock text')}")
     # The third channel. Client data is per model AND entrypoint, so the same
     # model can be in an experiment under an SDK host and not in a terminal.
     slots = client_data_slots()
@@ -7445,6 +7951,7 @@ def cmd_diff(args):
 
 
 def cmd_snapshot(args):
+    require_cfg()
     ver = args.a or cc_version()
     if snapshot(ver) is None:
         die(f"tweakcc has no prompt data for {ver} yet")
@@ -7633,6 +8140,12 @@ def build_parser():
     p = sub.add_parser("flags", help="which sections the SERVER is arming, and what our env masks")
     p.add_argument("--no-record", action="store_true",
                    help="report without updating the recorded snapshot")
+    p = sub.add_parser("global-md", help="this machine's global CLAUDE.md: its link, and whether it "
+                                         "was read against the current tweaks")
+    p.add_argument("--read", action="store_true",
+                   help="record that an agent has just read it against the tweaks this machine has "
+                        "applied (the workspace clone's commit; the files themselves live in "
+                        "the working checkout the link points into)")
     p = sub.add_parser("diff", help="diff stock A B [frag] | diff custom [frag]")
     p.add_argument("what", choices=["stock", "custom"])
     p.add_argument("a", nargs="?")
@@ -7656,7 +8169,8 @@ def main():
         {"init": cmd_init, "pull": cmd_pull, "status": cmd_status, "apply": cmd_apply,
          "analyze": cmd_analyze, "update": cmd_update,
          "check-update": cmd_check_update, "diff": cmd_diff, "snapshot": cmd_snapshot,
-         "prune": cmd_prune, "restore": cmd_restore, "flags": cmd_flags}[args.cmd](args)
+         "prune": cmd_prune, "restore": cmd_restore, "flags": cmd_flags,
+         "global-md": cmd_global_md}[args.cmd](args)
     finally:
         # The tripwire's own clock: if this run is slow enough to be killed on a
         # busier start, say so now, while the output still reaches the session.

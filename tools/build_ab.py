@@ -126,7 +126,7 @@ def generate(binary, root=ROOT, platform=None):
         items.append({'id': t['id'], 'name': t['title'], 'kind': t['kind'],
                       'variables': list(entry['identifierMap'].values()) if fragment else [],
                       'stock': ccctl.stock_body(entry) if fragment else p['old'].decode('latin-1'),
-                      'edited': ccctl.edit_text(root / t['source']) if fragment else p['new'].decode('latin-1'),
+                      'edited': ccctl.fragment_body(root / t['source'], entry) if fragment else p['new'].decode('latin-1'),
                       'note': t['intent'] + ' ' + t['verification'],
                       'source': t['source'], 'spec': t['spec']})
     cfg = {'repoPath': str(root)}
