@@ -9,6 +9,13 @@ them identical on a Linux workstation, a Mac and a Windows laptop.
 
 [What prompted this](#what-prompted-this) · [One setup, three machines](#one-setup-three-machines) · [Using the edits](#using-the-edits) · [How updates work](#how-updates-work) · [The spec](spec/00-disposition-spec.md)
 
+## Disclaimer
+
+This README.md is LLM-written and does not necessarily reflect the stance of the
+repository's maintainer (because he is lazy about this readme, sorry).
+
+## Origin Story
+
 I run several agent sessions alongside each other. I want them to use the
 context and tools available, make sensible inferences, and do the work I asked
 for. I also want to be able to read the finishing message without having
@@ -92,7 +99,7 @@ Disagreeing with me, reporting failures and checking facts remain part of the
 job.
 
 On my own workload, Opus 5.5 has been quite a bit more proactive under the
-current edits. That is my experience using it, not a benchmark result.
+current edits. That is my experience using these tweaks, not a benchmark result.
 
 ## One setup, three machines
 
